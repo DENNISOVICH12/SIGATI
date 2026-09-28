@@ -1,0 +1,52 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Asset extends Model
+{
+    
+    protected $fillable = [
+        'code',
+        'name',
+        'category',
+        'brand',
+        'model',
+        'serial_number',
+        'area_id',
+        'location_id',
+        'responsible_name',
+        'hostname',
+        'ip_address',
+        'mac_address',
+        'status',
+        'public_token',
+        'notes',
+    ];
+    protected static function booted(): void
+{
+    static::creating(function (Asset $asset) {
+        if (empty($asset->public_token)) {
+            $asset->public_token = (string) Str::uuid();
+        }
+    });
+}
+    public function area(): BelongsTo
+    {
+        return $this->belongsTo(Area::class);
+    }
+
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class);
+    }
+    public function history(): HasMany
+{
+    return $this->hasMany(AssetHistory::class)
+        ->orderByDesc('created_at');
+}
+} 
