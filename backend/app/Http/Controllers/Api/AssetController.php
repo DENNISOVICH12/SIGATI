@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Area;
 use App\Models\Asset;
 use App\Models\Location;
 use Illuminate\Http\JsonResponse;
@@ -181,13 +182,13 @@ class AssetController extends Controller
             'area_id' => [
                 'required',
                 'integer',
-                'exists:areas,id',
+                Rule::exists('areas', 'id')->where('active', true),
             ],
 
             'location_id' => [
                 'nullable',
                 'integer',
-                'exists:locations,id',
+                Rule::exists('locations', 'id')->where('active', true),
             ],
 
             'responsible_name' => [
@@ -228,6 +229,10 @@ class AssetController extends Controller
                 'max:2000',
             ],
         ]);
+
+        $validated['responsible_name'] = self::normalizeResponsibleName(
+            $validated['responsible_name'] ?? null
+        );
 
         /*
          * Si se proporciona una ubicación, comprobamos que
@@ -300,6 +305,12 @@ class AssetController extends Controller
     {
         abort_unless($request->user()->can('assets.update'), 403);
 
+        if ($request->exists('responsible_name')) {
+            throw ValidationException::withMessages([
+                'responsible_name' => ['El responsable solo puede modificarse mediante un traslado.'],
+            ]);
+        }
+
         $validated = $request->validate([
             'code' => [
                 'sometimes',
@@ -343,13 +354,6 @@ class AssetController extends Controller
                 'string',
                 'max:120',
                 Rule::unique('assets', 'serial_number')->ignore($asset->id),
-            ],
-
-            'responsible_name' => [
-                'sometimes',
-                'nullable',
-                'string',
-                'max:150',
             ],
 
             'hostname' => [
@@ -452,13 +456,13 @@ class AssetController extends Controller
             'area_id' => [
                 'required',
                 'integer',
-                'exists:areas,id',
+                Rule::exists('areas', 'id')->where('active', true),
             ],
 
             'location_id' => [
                 'nullable',
                 'integer',
-                'exists:locations,id',
+                Rule::exists('locations', 'id')->where('active', true),
             ],
 
             'responsible_name' => [
@@ -474,66 +478,60 @@ class AssetController extends Controller
             ],
         ]);
 
-        /*
-         * Validar que la ubicación pertenezca al área indicada.
-         */
-        /*
- * Validar que la ubicación pertenezca al área indicada.
- */
-if (!empty($validated['location_id'])) {
-    $locationBelongsToArea = Location::query()
-        ->whereKey($validated['location_id'])
-        ->where('area_id', $validated['area_id'])
-        ->exists();
+        $assetId = $asset->id;
 
-    if (!$locationBelongsToArea) {
-        return response()->json([
-            'message' => 'La ubicación seleccionada no pertenece al área indicada.',
-        ], 422);
-    }
-}
+        $asset = DB::transaction(function () use ($assetId, $validated, $request) {
+            $asset = Asset::query()->lockForUpdate()->findOrFail($assetId);
 
-/*
- * Evitar registrar traslados cuando no existe
- * ningún cambio real en la asignación del activo.
- */
-$newAreaId = (int) $validated['area_id'];
+            $activeArea = Area::query()
+                ->whereKey($validated['area_id'])
+                ->where('active', true)
+                ->lockForShare()
+                ->first(['id']);
 
-$newLocationId = isset($validated['location_id'])
-    ? (int) $validated['location_id']
-    : null;
+            if (!$activeArea) {
+                throw ValidationException::withMessages([
+                    'area_id' => ['El área seleccionada no existe o está inactiva.'],
+                ]);
+            }
 
-$newResponsibleName = isset($validated['responsible_name'])
-    ? trim($validated['responsible_name'])
-    : null;
+            if (!empty($validated['location_id'])) {
+                $location = Location::query()
+                    ->whereKey($validated['location_id'])
+                    ->where('area_id', $validated['area_id'])
+                    ->where('active', true)
+                    ->lockForShare()
+                    ->first(['id']);
 
-$currentAreaId = $asset->area_id !== null
-    ? (int) $asset->area_id
-    : null;
+                if (!$location) {
+                    throw ValidationException::withMessages([
+                        'location_id' => ['La ubicación seleccionada no pertenece al área indicada o está inactiva.'],
+                    ]);
+                }
+            }
 
-$currentLocationId = $asset->location_id !== null
-    ? (int) $asset->location_id
-    : null;
+            $newAreaId = (int) $validated['area_id'];
+            $newLocationId = isset($validated['location_id'])
+                ? (int) $validated['location_id']
+                : null;
+            $newResponsibleName = self::normalizeResponsibleName(
+                $validated['responsible_name'] ?? null
+            );
 
-$currentResponsibleName = $asset->responsible_name !== null
-    ? trim($asset->responsible_name)
-    : null;
+            $currentAreaId = $asset->area_id !== null ? (int) $asset->area_id : null;
+            $currentLocationId = $asset->location_id !== null ? (int) $asset->location_id : null;
+            $currentResponsibleName = self::normalizeResponsibleName($asset->responsible_name);
 
-$hasChanges =
-    $currentAreaId !== $newAreaId ||
-    $currentLocationId !== $newLocationId ||
-    $currentResponsibleName !== $newResponsibleName;
+            if (
+                $currentAreaId === $newAreaId &&
+                $currentLocationId === $newLocationId &&
+                $currentResponsibleName === $newResponsibleName
+            ) {
+                throw ValidationException::withMessages([
+                    'transfer' => ['Debes modificar el área, la ubicación o el funcionario responsable para realizar el traslado.'],
+                ]);
+            }
 
-if (!$hasChanges) {
-    return response()->json([
-        'message' => 'Debes modificar el área, la ubicación o el funcionario responsable para realizar el traslado.',
-    ], 422);
-}
-
-/*
- * Realizar el traslado dentro de una transacción.
- */
-$asset = DB::transaction(function () use ($asset, $validated, $request) {
             /*
              * Cargamos ubicación actual antes del traslado.
              */
@@ -558,7 +556,7 @@ $asset = DB::transaction(function () use ($asset, $validated, $request) {
             $asset->update([
                 'area_id' => $validated['area_id'],
                 'location_id' => $validated['location_id'] ?? null,
-                'responsible_name' => $validated['responsible_name'] ?? null,
+                'responsible_name' => $newResponsibleName,
             ]);
 
             /*
@@ -640,17 +638,16 @@ $asset = DB::transaction(function () use ($asset, $validated, $request) {
         /*
          * No registramos un falso cambio de estado.
          */
-        if ($asset->status === $validated['status']) {
-            return response()->json([
-                'message' => 'El activo ya se encuentra en el estado indicado.',
-                'asset' => $asset->load([
-                    'area:id,name,code',
-                    'location:id,area_id,name,code',
-                ]),
-            ], 422);
-        }
+        $assetId = $asset->id;
 
-        $asset = DB::transaction(function () use ($asset, $validated, $request) {
+        $asset = DB::transaction(function () use ($assetId, $validated, $request) {
+            $asset = Asset::query()->lockForUpdate()->findOrFail($assetId);
+
+            if ($asset->status === $validated['status']) {
+                throw ValidationException::withMessages([
+                    'status' => ['El activo ya se encuentra en el estado indicado.'],
+                ]);
+            }
 
             $oldStatus = $asset->status;
 
@@ -704,7 +701,7 @@ $asset = DB::transaction(function () use ($asset, $validated, $request) {
     /**
  * Consultar el historial de un activo.
  */
-public function history(Request $request, Asset $asset): JsonResponse
+    public function history(Request $request, Asset $asset): JsonResponse
 {
     abort_unless(
         $request->user()->can('assets.view'),
@@ -727,4 +724,11 @@ public function history(Request $request, Asset $asset): JsonResponse
         'history' => $history,
     ]);
 }
+
+    private static function normalizeResponsibleName(?string $responsibleName): ?string
+    {
+        $normalized = trim((string) $responsibleName);
+
+        return $normalized === '' ? null : $normalized;
+    }
 }
