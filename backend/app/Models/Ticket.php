@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Domain\Tickets\TicketStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -65,6 +66,8 @@ class Ticket extends Model
             'closed_at' => 'datetime',
             'response_due_at' => 'datetime',
             'resolution_due_at' => 'datetime',
+            'status' => TicketStatus::class,
+            'resolution' => 'array',
         ];
     }
 

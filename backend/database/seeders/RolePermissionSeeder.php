@@ -69,7 +69,10 @@ class RolePermissionSeeder extends Seeder
         | El ingeniero tiene control administrativo completo.
         */
 
-        $engineer->syncPermissions(self::PERMISSIONS);
+        $engineer->syncPermissions(array_values(array_diff(
+            self::PERMISSIONS,
+            ['tickets.claim']
+        )));
 
         /*
         |--------------------------------------------------------------------------

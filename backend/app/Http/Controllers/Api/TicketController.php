@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Asset;
 use App\Models\Ticket;
+use App\Models\User;
+use App\Services\Tickets\TicketWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -1480,636 +1482,139 @@ public function stats(Request $request): JsonResponse
         ], 201);
     }
     /**
- * Permitir que un técnico tome un ticket disponible.
- */
-public function claim(Request $request, Ticket $ticket): JsonResponse
-{
-    abort_unless($request->user()->can('tickets.claim'), 403);
-
-    $claimedTicket = DB::transaction(function () use ($ticket, $request) {
-
-        /*
-         * Volvemos a consultar el ticket aplicando bloqueo de fila.
-         *
-         * Esto evita que dos técnicos puedan tomar el mismo
-         * ticket simultáneamente.
-         */
-        $lockedTicket = Ticket::query()
-            ->whereKey($ticket->id)
-            ->lockForUpdate()
-            ->firstOrFail();
-
-        /*
-         * Solo se puede tomar un ticket que actualmente
-         * no tenga técnico asignado.
-         */
-        if ($lockedTicket->assigned_to !== null) {
-            abort(409, 'Este ticket ya fue tomado por otro técnico.');
-        }
-
-        /*
-         * No permitimos tomar tickets que ya hayan finalizado.
-         */
-        if (in_array($lockedTicket->status, [
-            'resolved',
-            'closed',
-        ], true)) {
-            abort(409, 'Este ticket ya no está disponible para ser tomado.');
-        }
-
-        $oldStatus = $lockedTicket->status;
-        $now = now();
-
-        $lockedTicket->update([
-            'assigned_to' => $request->user()->id,
-            'status' => 'assigned',
-            'assigned_at' => $now,
-
-            /*
-             * La primera vez que alguien toma el ticket
-             * registramos la primera respuesta.
-             *
-             * Si posteriormente se libera y otro técnico
-             * lo toma, este valor NO se sobrescribe.
-             */
-            'first_response_at' => $lockedTicket->first_response_at ?? $now,
-        ]);
-
-        /*
-         * Registramos la acción en el historial.
-         */
-        $lockedTicket->events()->create([
-            'user_id' => $request->user()->id,
-
-            'event_type' => 'claimed',
-
-            'old_status' => $oldStatus,
-            'new_status' => 'assigned',
-
-            'old_assigned_to' => null,
-            'new_assigned_to' => $request->user()->id,
-
-            'description' => 'El técnico tomó el servicio.',
-
-            'metadata' => [
-                'assigned_at' => $now->toISOString(),
-            ],
-        ]);
-
-        return $lockedTicket;
-    });
-
-    $claimedTicket->load([
-        'asset:id,code,name,category,area_id,location_id,status',
-        'asset.area:id,name,code',
-        'asset.location:id,area_id,name,code',
-        'assignedTechnician:id,name,email',
-
-        'events.user:id,name,email',
-        'events.oldAssignedTechnician:id,name,email',
-        'events.newAssignedTechnician:id,name,email',
-    ]);
-
-    return response()->json([
-        'message' => 'Servicio tomado correctamente.',
-        'ticket' => $claimedTicket,
-    ]);
-}
-/**
- * Permitir que un técnico desista de un servicio
- * que actualmente tiene asignado.
- */
-public function release(Request $request, Ticket $ticket): JsonResponse
-{
-    abort_unless($request->user()->can('tickets.claim'), 403);
-
-    $validated = $request->validate([
-        'reason' => [
-            'required',
-            'string',
-            'max:1000',
-        ],
-    ]);
-
-    $releasedTicket = DB::transaction(function () use (
-        $ticket,
-        $request,
-        $validated
-    ) {
-        /*
-         * Bloqueamos la fila para evitar cambios simultáneos
-         * mientras se libera el ticket.
-         */
-        $lockedTicket = Ticket::query()
-            ->whereKey($ticket->id)
-            ->lockForUpdate()
-            ->firstOrFail();
-
-        /*
-         * El ticket debe tener actualmente un técnico.
-         */
-        if ($lockedTicket->assigned_to === null) {
-            abort(409, 'Este ticket ya se encuentra disponible.');
-        }
-
-        /*
-         * Un técnico solamente puede desistir de un servicio
-         * que esté asignado a él mismo.
-         */
-        if ((int) $lockedTicket->assigned_to !== (int) $request->user()->id) {
-            abort(
-                403,
-                'No puedes desistir de un servicio asignado a otro técnico.'
-            );
-        }
-
-        /*
-         * No se pueden liberar tickets que ya terminaron.
-         */
-        if (in_array($lockedTicket->status, [
-            'resolved',
-            'closed',
-        ], true)) {
-            abort(
-                409,
-                'No se puede desistir de un ticket que ya fue finalizado.'
-            );
-        }
-
-        $oldStatus = $lockedTicket->status;
-        $oldAssignedTo = $lockedTicket->assigned_to;
-        $now = now();
-
-        /*
-         * Dejamos nuevamente disponible el ticket.
-         *
-         * first_response_at NO se borra porque representa
-         * cuándo ocurrió la primera atención real.
-         *
-         * assigned_at sí se limpia porque actualmente
-         * ya no existe un técnico asignado.
-         */
-        $lockedTicket->update([
-            'assigned_to' => null,
-            'status' => 'new',
-            'assigned_at' => null,
-        ]);
-
-        /*
-         * Registramos quién desistió, cuándo y por qué.
-         */
-        $lockedTicket->events()->create([
-            'user_id' => $request->user()->id,
-
-            'event_type' => 'released',
-
-            'old_status' => $oldStatus,
-            'new_status' => 'new',
-
-            'old_assigned_to' => $oldAssignedTo,
-            'new_assigned_to' => null,
-
-            'description' => 'El técnico desistió del servicio.',
-
-            'reason' => $validated['reason'],
-
-            'metadata' => [
-                'released_at' => $now->toISOString(),
-            ],
-        ]);
-
-        return $lockedTicket;
-    });
-
-    $releasedTicket->load([
-        'asset:id,code,name,category,area_id,location_id,status',
-        'asset.area:id,name,code',
-        'asset.location:id,area_id,name,code',
-        'assignedTechnician:id,name,email',
-
-        'events.user:id,name,email',
-        'events.oldAssignedTechnician:id,name,email',
-        'events.newAssignedTechnician:id,name,email',
-    ]);
-
-    return response()->json([
-        'message' => 'Servicio liberado correctamente.',
-        'ticket' => $releasedTicket,
-    ]);
-}
-/**
- * Asignar o reasignar un ticket a un técnico específico.
- *
- * Esta operación está destinada principalmente al ingeniero,
- * quien debe contar con el permiso tickets.assign.
- */
-public function assign(Request $request, Ticket $ticket): JsonResponse
-{
-    abort_unless($request->user()->can('tickets.assign'), 403);
-
-    $validated = $request->validate([
-        'technician_id' => [
-            'required',
-            'integer',
-            'exists:users,id',
-        ],
-
-        'reason' => [
-            'required',
-            'string',
-            'max:1000',
-        ],
-    ]);
-
-    $assignedTicket = DB::transaction(function () use (
-        $ticket,
-        $request,
-        $validated
-    ) {
-        /*
-         * Bloqueamos el ticket mientras se realiza la asignación.
-         *
-         * Esto evita conflictos si un técnico intenta tomar
-         * el servicio exactamente al mismo tiempo.
-         */
-        $lockedTicket = Ticket::query()
-            ->whereKey($ticket->id)
-            ->lockForUpdate()
-            ->firstOrFail();
-
-        /*
-         * No permitimos modificar tickets ya finalizados.
-         */
-        if (in_array($lockedTicket->status, [
-            'resolved',
-            'closed',
-        ], true)) {
-            abort(
-                409,
-                'No se puede asignar un técnico a un ticket finalizado.'
-            );
-        }
-
-        /*
-         * Obtenemos el usuario seleccionado.
-         */
-        $technician = \App\Models\User::query()
-            ->findOrFail($validated['technician_id']);
-
-        /*
-         * Verificamos que realmente tenga el rol technician.
-         *
-         * No basta con que el ID del usuario exista.
-         */
-        if (!$technician->hasRole('technician')) {
-            abort(
-                422,
-                'El usuario seleccionado no tiene el rol de técnico.'
-            );
-        }
-
-        if (! $technician->active) {
-            abort(
-                422,
-                'El técnico seleccionado se encuentra inactivo.'
-            );
-        }
-
-        /*
-         * Evitamos una reasignación innecesaria al mismo técnico.
-         */
-        if (
-            $lockedTicket->assigned_to !== null &&
-            (int) $lockedTicket->assigned_to === (int) $technician->id
-        ) {
-            abort(
-                409,
-                'Este ticket ya se encuentra asignado al técnico seleccionado.'
-            );
-        }
-
-        $oldStatus = $lockedTicket->status;
-        $oldAssignedTo = $lockedTicket->assigned_to;
-
-        $now = now();
-
-        /*
-         * Asignamos el servicio.
-         *
-         * first_response_at solamente se establece si todavía
-         * no existe una primera respuesta registrada.
-         */
-        $lockedTicket->update([
-            'assigned_to' => $technician->id,
-            'status' => 'assigned',
-            'assigned_at' => $now,
-            'first_response_at' => $lockedTicket->first_response_at ?? $now,
-        ]);
-
-        /*
-         * Determinamos si se trata de una asignación inicial
-         * o de una reasignación.
-         */
-        $eventType = $oldAssignedTo === null
-            ? 'assigned'
-            : 'reassigned';
-
-        $description = $oldAssignedTo === null
-            ? 'El ingeniero asignó el servicio a un técnico.'
-            : 'El ingeniero reasignó el servicio a otro técnico.';
-
-        /*
-         * Registramos toda la trazabilidad.
-         */
-        $lockedTicket->events()->create([
-            'user_id' => $request->user()->id,
-
-            'event_type' => $eventType,
-
-            'old_status' => $oldStatus,
-            'new_status' => 'assigned',
-
-            'old_assigned_to' => $oldAssignedTo,
-            'new_assigned_to' => $technician->id,
-
-            'description' => $description,
-
-            'reason' => $validated['reason'],
-
-            'metadata' => [
-                'assigned_at' => $now->toISOString(),
-                'assigned_by' => $request->user()->id,
-                'technician_id' => $technician->id,
-            ],
-        ]);
-
-        return $lockedTicket;
-    });
-
-    /*
-     * Cargamos toda la información necesaria para devolver
-     * inmediatamente el ticket actualizado al frontend.
+     * Permitir que un técnico tome un ticket disponible.
      */
-    $assignedTicket->load([
-        'asset:id,code,name,category,area_id,location_id,status',
-        'asset.area:id,name,code',
-        'asset.location:id,area_id,name,code',
+    public function claim(Request $request, Ticket $ticket, TicketWorkflowService $workflow): JsonResponse
+    {
+        abort_unless($request->user()->can('tickets.claim') && $request->user()->hasRole('technician'), 403);
 
-        'assignedTechnician:id,name,email',
+        return $this->workflowResponse(
+            $workflow->claim($ticket->id, $request->user()),
+            'Servicio tomado correctamente.'
+        );
+    }
+    /**
+     * Permitir que un técnico desista de un servicio
+     * que actualmente tiene asignado.
+     */
+    public function release(Request $request, Ticket $ticket, TicketWorkflowService $workflow): JsonResponse
+    {
+        abort_unless($request->user()->can('tickets.claim') && $request->user()->hasRole('technician'), 403);
 
-        'events.user:id,name,email',
-        'events.oldAssignedTechnician:id,name,email',
-        'events.newAssignedTechnician:id,name,email',
-    ]);
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:1000', 'not_regex:/^\s*$/u'],
+        ]);
 
-    return response()->json([
-        'message' => 'Técnico asignado correctamente.',
-        'ticket' => $assignedTicket,
-    ]);
-}
-/**
- * Iniciar la atención de un ticket.
- *
- * Solo puede hacerlo el técnico actualmente asignado
- * o un usuario con capacidad administrativa sobre tickets.
- */
-public function start(Request $request, Ticket $ticket): JsonResponse
-{
-    abort_unless(
-        $request->user()->can('tickets.update'),
-        403
-    );
+        return $this->workflowResponse(
+            $workflow->release($ticket->id, $request->user(), trim($validated['reason'])),
+            'Servicio liberado correctamente.'
+        );
+    }
+    /**
+     * Asignar o reasignar un ticket a un técnico específico.
+     *
+     * Esta operación está destinada principalmente al ingeniero,
+     * quien debe contar con el permiso tickets.assign.
+     */
+    public function assign(Request $request, Ticket $ticket, TicketWorkflowService $workflow): JsonResponse
+    {
+        abort_unless($request->user()->can('tickets.assign'), 403);
 
-    if ($ticket->status !== 'assigned') {
-        return response()->json([
-            'message' => 'Solo se puede iniciar la atención de un ticket asignado.',
-        ], 422);
+        $validated = $request->validate([
+            'technician_id' => ['required', 'integer', 'exists:users,id'],
+            'reason' => ['nullable', 'string', 'max:1000', 'not_regex:/^\s*$/u'],
+        ]);
+        $technician = User::query()->findOrFail($validated['technician_id']);
+        $reason = isset($validated['reason']) ? trim($validated['reason']) : null;
+
+        return $this->workflowResponse(
+            $workflow->assign($ticket->id, $request->user(), $technician, $reason),
+            'Técnico asignado correctamente.'
+        );
+    }
+    /**
+     * Iniciar la atención de un ticket.
+     *
+     * Solo puede hacerlo el técnico actualmente asignado
+     * o un usuario con capacidad administrativa sobre tickets.
+     */
+    public function start(Request $request, Ticket $ticket, TicketWorkflowService $workflow): JsonResponse
+    {
+        abort_unless($request->user()->can('tickets.update') && $request->user()->hasRole('technician'), 403);
+
+        $validated = $request->validate([
+            'note' => ['nullable', 'string', 'max:2000', 'not_regex:/^\s*$/u'],
+        ]);
+        $note = isset($validated['note']) ? trim($validated['note']) : null;
+
+        return $this->workflowResponse(
+            $workflow->start($ticket->id, $request->user(), $note),
+            'Atención del servicio iniciada correctamente.'
+        );
+    }
+    /**
+     * Resolver un ticket.
+     *
+     * Solo el técnico que tiene asignado el servicio puede resolverlo.
+     * El ticket debe estar actualmente en progreso.
+     */
+    public function resolve(Request $request, Ticket $ticket, TicketWorkflowService $workflow): JsonResponse
+    {
+        abort_unless($request->user()->can('tickets.update') && $request->user()->hasRole('technician'), 403);
+
+        $validated = $request->validate([
+            'diagnosis' => ['required', 'string', 'max:3000', 'not_regex:/^\s*$/u'],
+            'solution' => ['required', 'string', 'max:5000', 'not_regex:/^\s*$/u'],
+            'notes' => ['nullable', 'string', 'max:3000', 'not_regex:/^\s*$/u'],
+            'observations' => ['nullable', 'string', 'max:3000', 'not_regex:/^\s*$/u'],
+        ]);
+        $notes = $validated['notes'] ?? $validated['observations'] ?? null;
+
+        return $this->workflowResponse(
+            $workflow->resolve($ticket->id, $request->user(), [
+                'diagnosis' => trim($validated['diagnosis']),
+                'solution' => trim($validated['solution']),
+                'notes' => $notes === null ? null : trim($notes),
+            ]),
+            'Servicio resuelto correctamente.'
+        );
+    }
+    /**
+     * Cerrar definitivamente un ticket resuelto.
+     *
+     * Solo un usuario con el permiso tickets.close puede realizar
+     * el cierre administrativo del servicio.
+     */
+    public function close(Request $request, Ticket $ticket, TicketWorkflowService $workflow): JsonResponse
+    {
+        abort_unless($request->user()->can('tickets.close') && $request->user()->hasRole('engineer'), 403);
+
+        $validated = $request->validate([
+            'note' => ['required', 'string', 'max:2000', 'not_regex:/^\s*$/u'],
+        ]);
+
+        return $this->workflowResponse(
+            $workflow->close($ticket->id, $request->user(), trim($validated['note'])),
+            'Servicio cerrado correctamente.'
+        );
     }
 
-    if (!$ticket->assigned_to) {
-        return response()->json([
-            'message' => 'El ticket no tiene un técnico asignado.',
-        ], 422);
-    }
 
-    $user = $request->user();
-
-    $isAssignedTechnician = (int) $ticket->assigned_to === (int) $user->id;
-    $canAdministrate = $user->can('tickets.assign');
-
-    if (!$isAssignedTechnician && !$canAdministrate) {
-        return response()->json([
-            'message' => 'Este servicio está asignado a otro técnico.',
-        ], 403);
-    }
-
-    $validated = $request->validate([
-        'note' => [
-            'nullable',
-            'string',
-            'max:2000',
-        ],
-    ]);
-
-    $oldStatus = $ticket->status;
-
-    $ticket->update([
-        'status' => 'in_progress',
-        'first_response_at' => $ticket->first_response_at ?? now(),
-    ]);
-
-    $ticket->events()->create([
-        'user_id' => $user->id,
-        'event_type' => 'started',
-        'old_status' => $oldStatus,
-        'new_status' => 'in_progress',
-        'old_assigned_to' => $ticket->assigned_to,
-        'new_assigned_to' => $ticket->assigned_to,
-        'description' => 'Se inició la atención del servicio.',
-        'reason' => $validated['note'] ?? null,
-        'metadata' => [
-            'started_at' => now()->toISOString(),
-        ],
-    ]);
-
-    return response()->json([
-        'message' => 'Atención del servicio iniciada correctamente.',
-        'ticket' => $ticket->fresh([
-            'asset.area',
-            'asset.location',
+    private function workflowResponse(Ticket $ticket, string $message): JsonResponse
+    {
+        $ticket->load([
+            'asset:id,code,name,category,area_id,location_id,status',
+            'asset.area:id,name,code',
+            'asset.location:id,area_id,name,code',
             'assignedTechnician:id,name,email',
             'events.user:id,name,email',
             'events.oldAssignedTechnician:id,name,email',
             'events.newAssignedTechnician:id,name,email',
-        ]),
-    ]);
-}
-/**
- * Resolver un ticket.
- *
- * Solo el técnico que tiene asignado el servicio puede resolverlo.
- * El ticket debe estar actualmente en progreso.
- */
-public function resolve(Request $request, Ticket $ticket): JsonResponse
-{
-    abort_unless($request->user()->can('tickets.update'), 403);
+        ]);
 
-    $validated = $request->validate([
-        'diagnosis' => [
-            'required',
-            'string',
-            'max:3000',
-        ],
-
-        'solution' => [
-            'required',
-            'string',
-            'max:5000',
-        ],
-
-        'observations' => [
-            'nullable',
-            'string',
-            'max:3000',
-        ],
-    ]);
-
-    // Solo se puede resolver un ticket que esté siendo atendido.
-    if ($ticket->status !== 'in_progress') {
         return response()->json([
-            'message' => 'Solo se puede resolver un servicio que esté en proceso.',
-        ], 422);
+            'message' => $message,
+            'ticket' => $ticket,
+        ]);
     }
-
-    // El ticket debe tener un técnico asignado.
-    if (!$ticket->assigned_to) {
-        return response()->json([
-            'message' => 'El servicio no tiene un técnico asignado.',
-        ], 422);
-    }
-
-    // Solo el técnico asignado puede resolver el servicio.
-    if ((int) $ticket->assigned_to !== (int) $request->user()->id) {
-        return response()->json([
-            'message' => 'Solo el técnico asignado puede resolver este servicio.',
-        ], 403);
-    }
-
-    $oldStatus = $ticket->status;
-
-    $resolution = [
-        'diagnosis' => $validated['diagnosis'],
-        'solution' => $validated['solution'],
-        'observations' => $validated['observations'] ?? null,
-    ];
-
-    $ticket->update([
-        'status' => 'resolved',
-        'resolved_at' => now(),
-        'resolution' => json_encode(
-            $resolution,
-            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
-        ),
-    ]);
-
-    $ticket->events()->create([
-        'user_id' => $request->user()->id,
-        'event_type' => 'resolved',
-        'old_status' => $oldStatus,
-        'new_status' => 'resolved',
-        'old_assigned_to' => $ticket->assigned_to,
-        'new_assigned_to' => $ticket->assigned_to,
-        'description' => 'El técnico resolvió el servicio.',
-        'reason' => $validated['solution'],
-        'metadata' => [
-            'diagnosis' => $validated['diagnosis'],
-            'solution' => $validated['solution'],
-            'observations' => $validated['observations'] ?? null,
-            'resolved_at' => $ticket->resolved_at?->toISOString(),
-        ],
-    ]);
-
-    return response()->json([
-        'message' => 'Servicio resuelto correctamente.',
-        'ticket' => $ticket->fresh([
-            'asset.area',
-            'asset.location',
-            'assignedTechnician:id,name,email',
-            'events.user:id,name,email',
-            'events.oldAssignedTechnician:id,name,email',
-            'events.newAssignedTechnician:id,name,email',
-        ]),
-    ]);
-}
-/**
- * Cerrar definitivamente un ticket resuelto.
- *
- * Solo un usuario con el permiso tickets.close puede realizar
- * el cierre administrativo del servicio.
- */
-public function close(Request $request, Ticket $ticket): JsonResponse
-{
-    $user = $request->user();
-
-    if (! $user->can('tickets.close')) {
-        return response()->json([
-            'message' => 'No tienes permiso para cerrar definitivamente este servicio.',
-            'error' => 'forbidden',
-        ], 403);
-    }
-
-    $validated = $request->validate([
-        'note' => [
-            'required',
-            'string',
-            'max:2000',
-        ],
-    ]);
-
-    // Solo se pueden cerrar servicios previamente resueltos.
-    if ($ticket->status !== 'resolved') {
-        return response()->json([
-            'message' => 'Solo se puede cerrar un servicio que se encuentre resuelto.',
-        ], 422);
-    }
-
-    $oldStatus = $ticket->status;
-
-    $ticket->update([
-        'status' => 'closed',
-        'closed_at' => now(),
-    ]);
-
-    $ticket->events()->create([
-        'user_id' => $request->user()->id,
-        'event_type' => 'closed',
-
-        'old_status' => $oldStatus,
-        'new_status' => 'closed',
-
-        'old_assigned_to' => $ticket->assigned_to,
-        'new_assigned_to' => $ticket->assigned_to,
-
-        'description' => 'El servicio fue cerrado definitivamente.',
-        'reason' => $validated['note'],
-
-        'metadata' => [
-            'closed_at' => $ticket->closed_at?->toISOString(),
-            'closed_by' => $request->user()->id,
-        ],
-    ]);
-
-    return response()->json([
-        'message' => 'Servicio cerrado correctamente.',
-        'ticket' => $ticket->fresh([
-            'asset.area',
-            'asset.location',
-            'assignedTechnician:id,name,email',
-
-            'events.user:id,name,email',
-            'events.oldAssignedTechnician:id,name,email',
-            'events.newAssignedTechnician:id,name,email',
-        ]),
-    ]);
-}
 }
