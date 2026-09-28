@@ -9,6 +9,25 @@ use Spatie\Permission\PermissionRegistrar;
 
 class RolePermissionSeeder extends Seeder
 {
+    public const PERMISSIONS = [
+        'assets.view', 'assets.create', 'assets.update', 'assets.transfer',
+        'assets.change_status', 'assets.decommission',
+        'tickets.view', 'tickets.create', 'tickets.claim', 'tickets.assign',
+        'tickets.update', 'tickets.close',
+        'maintenance.view', 'maintenance.create', 'maintenance.update',
+        'disposals.view', 'disposals.request', 'disposals.approve', 'disposals.reject',
+        'licenses.view', 'licenses.create', 'licenses.update', 'licenses.assign', 'licenses.renew',
+        'users.view', 'users.create', 'users.update', 'users.deactivate', 'users.assign_roles',
+        'reports.view', 'reports.export', 'audit.view', 'settings.manage',
+    ];
+
+    public const TECHNICIAN_PERMISSIONS = [
+        'assets.view', 'assets.create', 'assets.update', 'assets.transfer', 'assets.change_status',
+        'tickets.view', 'tickets.create', 'tickets.claim', 'tickets.update',
+        'maintenance.view', 'maintenance.create', 'maintenance.update',
+        'disposals.view', 'disposals.request', 'licenses.view', 'reports.view',
+    ];
+
     public function run(): void
     {
         // Limpiar caché de permisos de Spatie
@@ -20,61 +39,7 @@ class RolePermissionSeeder extends Seeder
         |--------------------------------------------------------------------------
         */
 
-        $permissions = [
-
-            // Activos
-            'assets.view',
-            'assets.create',
-            'assets.update',
-            'assets.transfer',
-            'assets.change_status',
-            'assets.decommission',
-
-            // Tickets
-            'tickets.view',
-            'tickets.create',
-            'tickets.claim',
-            'tickets.assign',
-            'tickets.update',
-            'tickets.close',
-
-            // Mantenimiento
-            'maintenance.view',
-            'maintenance.create',
-            'maintenance.update',
-
-            // Solicitudes de baja
-            'disposals.view',
-            'disposals.request',
-            'disposals.approve',
-            'disposals.reject',
-
-            // Licencias de software
-            'licenses.view',
-            'licenses.create',
-            'licenses.update',
-            'licenses.assign',
-            'licenses.renew',
-
-            // Usuarios
-            'users.view',
-            'users.create',
-            'users.update',
-            'users.deactivate',
-            'users.assign_roles',
-
-            // Reportes
-            'reports.view',
-            'reports.export',
-
-            // Auditoría
-            'audit.view',
-
-            // Configuración
-            'settings.manage',
-        ];
-
-        foreach ($permissions as $permission) {
+        foreach (self::PERMISSIONS as $permission) {
             Permission::firstOrCreate([
                 'name' => $permission,
                 'guard_name' => 'web',
@@ -104,7 +69,7 @@ class RolePermissionSeeder extends Seeder
         | El ingeniero tiene control administrativo completo.
         */
 
-        $engineer->syncPermissions(Permission::all());
+        $engineer->syncPermissions(self::PERMISSIONS);
 
         /*
         |--------------------------------------------------------------------------
@@ -115,37 +80,7 @@ class RolePermissionSeeder extends Seeder
         | la configuración general del sistema.
         */
 
-        $technician->syncPermissions([
-
-            // Activos
-            'assets.view',
-            'assets.create',
-            'assets.update',
-            'assets.transfer',
-            'assets.change_status',
-
-            // Tickets
-            'tickets.view',
-            'tickets.create',
-            'tickets.claim',
-            'tickets.update',
-            'tickets.close',
-
-            // Mantenimiento
-            'maintenance.view',
-            'maintenance.create',
-            'maintenance.update',
-
-            // Bajas
-            'disposals.view',
-            'disposals.request',
-
-            // Licencias
-            'licenses.view',
-
-            // Reportes
-            'reports.view',
-        ]);
+        $technician->syncPermissions(self::TECHNICIAN_PERMISSIONS);
 
         // Limpiar nuevamente la caché
         app()[PermissionRegistrar::class]->forgetCachedPermissions();
