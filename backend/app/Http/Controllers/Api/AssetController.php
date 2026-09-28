@@ -486,7 +486,6 @@ class AssetController extends Controller
             $activeArea = Area::query()
                 ->whereKey($validated['area_id'])
                 ->where('active', true)
-                ->lockForShare()
                 ->first(['id']);
 
             if (!$activeArea) {
@@ -500,7 +499,6 @@ class AssetController extends Controller
                     ->whereKey($validated['location_id'])
                     ->where('area_id', $validated['area_id'])
                     ->where('active', true)
-                    ->lockForShare()
                     ->first(['id']);
 
                 if (!$location) {
