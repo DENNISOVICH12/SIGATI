@@ -53,9 +53,20 @@ class AuthTest extends TestCase
         $user = $this->user();
         $token = $user->createToken('browser')->plainTextToken;
 
+        $this->assertDatabaseCount('personal_access_tokens', 1);
+        $this->withToken($token)->getJson('/api/me')->assertOk();
+
+        // Each HTTP call must resolve Sanctum's request guard again. Laravel's
+        // in-process test client otherwise retains the resolved user between
+        // multiple requests made by this test method.
+        $this->app['auth']->forgetGuards();
+
         $this->withToken($token)->postJson('/api/logout')->assertOk();
 
         $this->assertDatabaseCount('personal_access_tokens', 0);
+
+        $this->app['auth']->forgetGuards();
+
         $this->withToken($token)->getJson('/api/me')->assertUnauthorized();
     }
 
