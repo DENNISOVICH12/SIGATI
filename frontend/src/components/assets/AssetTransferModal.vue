@@ -34,6 +34,11 @@ const selectedArea = computed(() => {
 const locations = computed(() => {
   return selectedArea.value?.locations ?? []
 })
+const normalizeResponsibleName = (value) => {
+  const normalized = String(value ?? '').trim()
+
+  return normalized || null
+}
 const hasChanges = computed(() => {
   if (!props.asset) return false
 
@@ -53,12 +58,15 @@ const hasChanges = computed(() => {
     props.asset.location_id ?? props.asset.location?.id
   )
 
-  const originalResponsible =
-    (props.asset.responsible_name ?? '').trim()
+  const originalResponsible = normalizeResponsibleName(
+    props.asset.responsible_name,
+  )
 
   const newAreaId = normalizeId(areaId.value)
   const newLocationId = normalizeId(locationId.value)
-  const newResponsible = responsibleName.value.trim()
+  const newResponsible = normalizeResponsibleName(
+    responsibleName.value,
+  )
 
   return (
     originalAreaId !== newAreaId ||
@@ -140,8 +148,9 @@ const submit = async () => {
       location_id: locationId.value
         ? Number(locationId.value)
         : null,
-      responsible_name:
-        responsibleName.value.trim() || null,
+      responsible_name: normalizeResponsibleName(
+        responsibleName.value,
+      ),
       reason: reason.value.trim(),
     }
 

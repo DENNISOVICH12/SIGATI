@@ -256,7 +256,6 @@ const handleSubmit = async () => {
         brand: form.value.brand?.trim() || null,
         model: form.value.model?.trim() || null,
         serial_number: form.value.serial_number?.trim() || null,
-        responsible_name: form.value.responsible_name?.trim() || null,
         hostname: form.value.hostname?.trim() || null,
         ip_address: form.value.ip_address?.trim() || null,
         mac_address: form.value.mac_address?.trim() || null,
@@ -585,7 +584,7 @@ const handleKeydown = (e) => {
               </div>
             </div>
 
-            <!-- Modo Edición: Área y ubicación informativas fijas + responsable editable -->
+            <!-- Modo Edición: la asignación solo cambia mediante Trasladar -->
             <div v-else class="fields-grid grid-3">
               <div class="form-field readonly-field">
                 <label>Área asignada</label>
@@ -603,21 +602,14 @@ const handleKeydown = (e) => {
                 </small>
               </div>
 
-              <!-- Responsable (sí es modificable en PATCH) -->
-              <div class="form-field" :class="{ 'has-error': fieldErrors.responsible_name }">
-                <label for="asset-responsible-edit">Funcionario responsable</label>
-                <input
-                  id="asset-responsible-edit"
-                  v-model="form.responsible_name"
-                  type="text"
-                  maxlength="150"
-                  placeholder="Nombre de la persona a cargo"
-                  :disabled="saving"
-                  @input="clearFieldError('responsible_name')"
-                />
-                <span v-if="fieldErrors.responsible_name" class="field-error-msg">
-                  {{ fieldErrors.responsible_name[0] }}
-                </span>
+              <div class="form-field readonly-field">
+                <label>Funcionario responsable</label>
+                <div class="readonly-value">
+                  {{ form.responsible_name || 'Sin responsable asignado' }}
+                </div>
+                <small class="field-note">
+                  El responsable se modifica mediante la opción <em>Trasladar</em>.
+                </small>
               </div>
             </div>
           </fieldset>
