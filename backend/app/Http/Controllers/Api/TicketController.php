@@ -1768,6 +1768,13 @@ public function assign(Request $request, Ticket $ticket): JsonResponse
             );
         }
 
+        if (! $technician->active) {
+            abort(
+                422,
+                'El técnico seleccionado se encuentra inactivo.'
+            );
+        }
+
         /*
          * Evitamos una reasignación innecesaria al mismo técnico.
          */

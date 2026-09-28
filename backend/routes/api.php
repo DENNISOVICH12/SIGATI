@@ -4,13 +4,14 @@ use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\TicketController;
+use App\Http\Controllers\Api\UserAccessController;
 use Illuminate\Support\Facades\Route;
 
 // Ruta pública
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
 
 // Rutas protegidas
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
     /*
      * ==========================================================
@@ -19,6 +20,9 @@ Route::middleware('auth:sanctum')->group(function () {
      */
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    Route::get('/users/technicians', [UserAccessController::class, 'technicians']);
+    Route::patch('/users/{user}/active', [UserAccessController::class, 'updateActive']);
 
     /*
      * ==========================================================

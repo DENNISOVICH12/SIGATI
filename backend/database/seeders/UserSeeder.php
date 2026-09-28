@@ -10,28 +10,36 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        $engineer = User::updateOrCreate(
-            [
-                'email' => 'ingeniero@sigati.local',
-            ],
-            [
-                'name' => 'Ingeniero SIGATI',
-                'password' => Hash::make('Sigati2026*'),
-            ]
+        $this->seedOptionalUser(
+            config('sigati.bootstrap.engineer.email'),
+            config('sigati.bootstrap.engineer.password'),
+            config('sigati.bootstrap.engineer.name'),
+            'engineer'
         );
 
-        $engineer->syncRoles(['engineer']);
+        $this->seedOptionalUser(
+            config('sigati.bootstrap.technician.email'),
+            config('sigati.bootstrap.technician.password'),
+            config('sigati.bootstrap.technician.name'),
+            'technician'
+        );
+    }
 
-        $technician = User::updateOrCreate(
-            [
-                'email' => 'tecnico@sigati.local',
-            ],
-            [
-                'name' => 'Técnico SIGATI',
-                'password' => Hash::make('Sigati2026*'),
-            ]
+    private function seedOptionalUser(?string $email, ?string $password, string $name, string $role): void
+    {
+        if (blank($email) && blank($password)) {
+            return;
+        }
+
+        if (blank($email) || blank($password)) {
+            throw new \RuntimeException("Both bootstrap email and password are required for the {$role} user.");
+        }
+
+        $user = User::firstOrCreate(
+            ['email' => strtolower(trim($email))],
+            ['name' => $name, 'password' => Hash::make($password), 'active' => true]
         );
 
-        $technician->syncRoles(['technician']);
+        $user->syncRoles([$role]);
     }
 }
