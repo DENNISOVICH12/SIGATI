@@ -19,7 +19,7 @@ class PermissionTest extends TestCase
         $technician = Role::findByName('technician');
 
         $this->assertEqualsCanonicalizing(
-            RolePermissionSeeder::PERMISSIONS,
+            array_values(array_diff(RolePermissionSeeder::PERMISSIONS, ['tickets.claim'])),
             $engineer->permissions->pluck('name')->all()
         );
         $this->assertEqualsCanonicalizing(
@@ -35,6 +35,8 @@ class PermissionTest extends TestCase
         foreach (['tickets.view', 'tickets.create', 'tickets.claim', 'tickets.update'] as $permission) {
             $this->assertTrue($technician->hasPermissionTo($permission));
         }
+
+        $this->assertFalse($engineer->hasPermissionTo('tickets.claim'));
 
         foreach (['assets.view', 'assets.create', 'assets.update', 'assets.transfer', 'assets.change_status'] as $permission) {
             $this->assertTrue($engineer->hasPermissionTo($permission));
