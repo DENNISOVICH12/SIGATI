@@ -1,37 +1,53 @@
-<template>
-  <section class="ticket-shell">
-    <p class="ticket-shell__eyebrow">Mesa de Ayuda</p>
-    <h1>Detalle del ticket</h1>
-    <p>
-      El detalle y la línea de tiempo se habilitarán en una fase posterior.
-    </p>
-  </section>
-</template>
+<script setup>
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuth } from '@/composables/useAuth'
+import { assignTicket, claimTicket, closeTicket, getAssignableTechnicians, getTicket, releaseTicket, resolveTicket, startTicket } from '@/services/ticketService'
+import TicketActionModal from '@/components/tickets/TicketActionModal.vue'
+import TicketPriorityBadge from '@/components/tickets/TicketPriorityBadge.vue'
+import TicketSlaBadge from '@/components/tickets/TicketSlaBadge.vue'
+import TicketStatusBadge from '@/components/tickets/TicketStatusBadge.vue'
+import TicketTimeline from '@/components/tickets/TicketTimeline.vue'
+
+const route=useRoute(), router=useRouter(); const { user, can, hasRole }=useAuth()
+const ticket=ref(null), loading=ref(true), pageError=ref(null), notice=ref(null), busy=ref(false), modal=ref(''), fieldErrors=ref({}), technicians=ref([])
+const formatDate=value=>{if(!value)return 'No registrada';const parsed=new Date(value);return Number.isNaN(parsed.getTime())?'No registrada':new Intl.DateTimeFormat('es-CO',{dateStyle:'medium',timeStyle:'short'}).format(parsed)}
+const sourceLabels={internal:'Interno',qr:'QR',phone:'Teléfono',email:'Correo electrónico',manual:'Manual'}
+const mine=computed(()=>Number(ticket.value?.assigned_to)===Number(user.value?.id))
+const actions=computed(()=>({
+  claim:hasRole('technician')&&can('tickets.claim')&&ticket.value?.status==='new'&&!ticket.value?.assigned_to,
+  release:hasRole('technician')&&can('tickets.claim')&&ticket.value?.status==='assigned'&&mine.value,
+  start:hasRole('technician')&&can('tickets.update')&&ticket.value?.status==='assigned'&&mine.value,
+  resolve:hasRole('technician')&&can('tickets.update')&&ticket.value?.status==='in_progress'&&mine.value,
+  assign:can('tickets.assign')&&['new','assigned','in_progress'].includes(ticket.value?.status),
+  close:hasRole('engineer')&&can('tickets.close')&&ticket.value?.status==='resolved',
+}))
+const classifyError=error=>{const status=error?.response?.status;if(status===404)return{status,title:'Ticket no encontrado',message:'El ticket solicitado no existe o ya no está disponible.'};if(status===403)return{status,title:'Acceso restringido',message:'No tienes permisos para consultar este ticket.'};return{status:status||0,title:'No fue posible cargar el ticket',message:'Ocurrió un problema al consultar la información. Intenta nuevamente.'}}
+const load=async({silent=false}={})=>{if(!silent)loading.value=true;pageError.value=null;try{ticket.value=(await getTicket(route.params.id)).data.ticket}catch(error){ticket.value=null;pageError.value=classifyError(error)}finally{loading.value=false}}
+const openAction=async action=>{fieldErrors.value={};notice.value=null;if(action==='assign'&&!technicians.value.length){try{technicians.value=(await getAssignableTechnicians()).data.technicians||[]}catch(error){notice.value={type:'error',text:error.response?.status===403?'No tienes permisos para consultar técnicos.':'No fue posible cargar los técnicos activos.'};return}}modal.value=action}
+const endpoints={release:releaseTicket,assign:assignTicket,start:startTicket,resolve:resolveTicket,close:closeTicket}
+const runAction=async payload=>{busy.value=true;fieldErrors.value={};const action=modal.value;try{await endpoints[action](ticket.value.id,payload);modal.value='';notice.value={type:'success',text:'La acción se completó correctamente.'};await load({silent:true})}catch(error){const status=error.response?.status;if(status===422){fieldErrors.value=error.response?.data?.errors||{};notice.value={type:'error',text:error.response?.data?.message||'Revisa los campos indicados.'}}else if(status===409){modal.value='';notice.value={type:'error',text:error.response?.data?.message||'El ticket cambió mientras realizabas la operación. Se actualizó la información.'};await load({silent:true})}else if(status===403){modal.value='';notice.value={type:'error',text:'No tienes permisos para realizar esta acción.'}}else if(status!==401){notice.value={type:'error',text:'No fue posible completar la acción. Intenta nuevamente.'}}}finally{busy.value=false}}
+const claim=async()=>{busy.value=true;notice.value=null;try{await claimTicket(ticket.value.id);notice.value={type:'success',text:'Ticket tomado correctamente.'};await load({silent:true})}catch(error){const status=error.response?.status;if(status===409){notice.value={type:'error',text:error.response?.data?.message||'Otro técnico tomó el ticket antes. Se actualizó la información.'};await load({silent:true})}else if(status===403)notice.value={type:'error',text:'No tienes permisos para tomar este ticket.'};else if(status!==401)notice.value={type:'error',text:'No fue posible tomar el ticket. Intenta nuevamente.'}}finally{busy.value=false}}
+onMounted(load)
+</script>
+
+<template><div class="ticket-detail">
+  <div v-if="loading" class="loading" aria-live="polite"><i class="sk w1"></i><i class="sk w2"></i><i class="sk w3"></i><div><i v-for="n in 4" :key="n" class="sk card"></i></div></div>
+  <section v-else-if="pageError" class="page-state" role="alert"><b>!</b><h1>{{ pageError.title }}</h1><p>{{ pageError.message }}</p><div><button class="secondary" @click="router.push({name:'tickets'})">Volver a Mesa de Ayuda</button><button v-if="![403,404].includes(pageError.status)" class="primary" @click="load()">Reintentar</button></div></section>
+  <template v-else-if="ticket"><button class="back" @click="router.push({name:'tickets'})">← Volver a Mesa de Ayuda</button>
+    <div v-if="notice" class="notice" :class="notice.type" role="status"><span>{{ notice.text }}</span><button aria-label="Cerrar mensaje" @click="notice=null">×</button></div>
+    <header class="hero"><div><div class="badges"><code>{{ ticket.code }}</code><TicketStatusBadge :status="ticket.status"/><TicketPriorityBadge :priority="ticket.priority"/></div><h1>{{ ticket.title }}</h1><p>{{ ticket.category }} · {{ sourceLabels[ticket.source] || ticket.source }}</p></div><div class="actions"><button v-if="actions.claim" class="primary" :disabled="busy" @click="claim">{{ busy?'Procesando…':'Tomar ticket' }}</button><button v-if="actions.release" class="secondary" @click="openAction('release')">Liberar</button><button v-if="actions.assign" class="secondary" @click="openAction('assign')">{{ ticket.assigned_to?'Reasignar':'Asignar' }}</button><button v-if="actions.start" class="primary" @click="openAction('start')">Iniciar atención</button><button v-if="actions.resolve" class="primary" @click="openAction('resolve')">Resolver</button><button v-if="actions.close" class="primary" @click="openAction('close')">Cerrar ticket</button></div></header>
+    <div class="grid"><section class="panel wide"><h2>Descripción</h2><p class="description">{{ ticket.description }}</p></section>
+      <section class="panel"><h2>Solicitante</h2><dl><div><dt>Nombre</dt><dd>{{ ticket.reporter_name }}</dd></div><div v-if="ticket.reporter_email"><dt>Correo</dt><dd>{{ ticket.reporter_email }}</dd></div><div v-if="ticket.reporter_phone"><dt>Teléfono</dt><dd>{{ ticket.reporter_phone }}</dd></div></dl></section>
+      <section class="panel"><h2>Asignación</h2><dl><div><dt>Técnico</dt><dd>{{ ticket.assigned_technician?.name||'Sin asignar' }}</dd></div><div v-if="ticket.assigned_technician?.email"><dt>Correo</dt><dd>{{ ticket.assigned_technician.email }}</dd></div><div><dt>Asignado</dt><dd>{{ formatDate(ticket.assigned_at) }}</dd></div></dl></section>
+      <section class="panel"><h2>Activo asociado</h2><div v-if="ticket.asset"><dl><div><dt>Código</dt><dd>{{ ticket.asset.code }}</dd></div><div><dt>Nombre</dt><dd>{{ ticket.asset.name }}</dd></div><div><dt>Categoría</dt><dd>{{ ticket.asset.category }}</dd></div><div v-if="ticket.asset.area"><dt>Área</dt><dd>{{ ticket.asset.area.name }}</dd></div><div v-if="ticket.asset.location"><dt>Ubicación</dt><dd>{{ ticket.asset.location.name }}</dd></div></dl></div><p v-else class="muted">Sin activo asociado</p></section>
+      <section class="panel"><h2>Fechas del flujo</h2><dl><div><dt>Reportado</dt><dd>{{ formatDate(ticket.reported_at) }}</dd></div><div><dt>Primera respuesta</dt><dd>{{ formatDate(ticket.first_response_at) }}</dd></div><div><dt>Resuelto</dt><dd>{{ formatDate(ticket.resolved_at) }}</dd></div><div><dt>Cerrado</dt><dd>{{ formatDate(ticket.closed_at) }}</dd></div></dl></section>
+      <section class="panel wide"><h2>Acuerdos de nivel de servicio</h2><div class="sla-grid"><div><span>Primera respuesta</span><TicketSlaBadge :status="ticket.response_sla_status"/><small>Límite: {{ formatDate(ticket.response_due_at) }}</small></div><div><span>Resolución</span><TicketSlaBadge :status="ticket.resolution_sla_status"/><small>Límite: {{ formatDate(ticket.resolution_due_at) }}</small></div></div></section>
+      <section v-if="ticket.resolution" class="panel wide"><h2>Resolución</h2><dl class="resolution"><div><dt>Diagnóstico</dt><dd>{{ ticket.resolution.diagnosis }}</dd></div><div><dt>Solución</dt><dd>{{ ticket.resolution.solution }}</dd></div><div v-if="ticket.resolution.notes"><dt>Notas</dt><dd>{{ ticket.resolution.notes }}</dd></div></dl></section>
+    </div><TicketTimeline :events="ticket.events||[]"/><TicketActionModal :open="Boolean(modal)" :action="modal" :ticket="ticket" :technicians="technicians" :busy="busy" :errors="fieldErrors" @close="modal=''" @submit="runAction"/>
+  </template>
+</div></template>
 
 <style scoped>
-.ticket-shell {
-  padding: 32px;
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-}
-
-.ticket-shell__eyebrow {
-  margin-bottom: 6px;
-  color: var(--color-primary);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-h1 {
-  margin-bottom: 8px;
-  font-size: 24px;
-}
-
-.ticket-shell > p:last-child {
-  color: var(--color-text-muted);
-}
+.ticket-detail{display:flex;flex-direction:column;gap:22px;min-width:0}.back{align-self:flex-start;border:0;background:transparent;padding:0;color:var(--color-text-muted);font-weight:650;cursor:pointer}.hero{display:flex;justify-content:space-between;align-items:flex-start;gap:24px}.badges{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.badges code{padding:5px 9px;border:1px solid var(--color-primary-border);border-radius:7px;background:var(--color-primary-light);color:var(--color-primary);font-weight:800}.hero h1{margin:10px 0 6px;font-size:28px;overflow-wrap:anywhere}.hero p{margin:0;color:var(--color-text-muted)}.actions{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap}.primary,.secondary{min-height:42px;padding:0 15px;border-radius:9px;font-weight:700;cursor:pointer}.primary{border:1px solid var(--color-primary);background:var(--color-primary);color:#fff}.secondary{border:1px solid var(--color-border);background:#fff;color:var(--color-text-main)}button:disabled{opacity:.6;cursor:not-allowed}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.panel{min-width:0;padding:22px;border:1px solid var(--color-border);border-radius:var(--radius-lg);background:#fff}.wide{grid-column:1/-1}.panel h2{margin:0 0 17px;font-size:15px}.description,.resolution dd{white-space:pre-wrap;line-height:1.65}.description,.muted{margin:0;color:var(--color-text-muted)}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px;margin:0}dt{margin-bottom:5px;color:var(--color-text-subtle);font-size:11px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}dd{margin:0;font-size:14px;font-weight:600;overflow-wrap:anywhere}.sla-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.sla-grid>div{display:grid;gap:8px;padding:15px;border-radius:10px;background:#f8fafc}.sla-grid span{font-size:13px;font-weight:750}.sla-grid small{color:var(--color-text-muted)}.resolution{grid-template-columns:1fr}.notice{display:flex;justify-content:space-between;gap:15px;padding:12px 15px;border-radius:9px;font-size:13px;font-weight:650}.notice.success{border:1px solid #bbf7d0;background:#ecfdf5;color:#166534}.notice.error{border:1px solid #fecaca;background:#fef2f2;color:#991b1b}.notice button{border:0;background:transparent;color:inherit;font-size:20px}.page-state{text-align:center;padding:65px 24px;border:1px solid var(--color-border);border-radius:var(--radius-lg);background:#fff}.page-state>b{display:grid;place-items:center;width:50px;height:50px;margin:auto;border-radius:50%;background:#fef2f2;color:#dc2626;font-size:22px}.page-state h1{margin:15px 0 7px}.page-state p{margin:0 0 20px;color:var(--color-text-muted)}.page-state>div{display:flex;justify-content:center;gap:10px}.loading{display:grid;gap:14px}.sk{display:block;border-radius:8px;background:linear-gradient(90deg,#eef2f7,#e2e8f0,#eef2f7);background-size:200%;animation:shine 1.3s infinite}.w1{width:140px;height:18px}.w2{width:min(420px,75%);height:34px}.w3{width:260px;height:18px}.loading>div{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{height:180px}@keyframes shine{to{background-position:-200% 0}}@media(max-width:850px){.hero{flex-direction:column}.actions{justify-content:flex-start}.grid{grid-template-columns:1fr}.wide{grid-column:auto}}@media(max-width:560px){.hero h1{font-size:23px}.actions{width:100%;display:grid;grid-template-columns:1fr}.actions button{width:100%}.panel{padding:18px}dl,.sla-grid{grid-template-columns:1fr}.loading>div{grid-template-columns:1fr}.page-state>div{flex-direction:column}}
 </style>
