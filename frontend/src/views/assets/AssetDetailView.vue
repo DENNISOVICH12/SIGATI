@@ -9,6 +9,7 @@ import AssetFormModal from '@/components/assets/AssetFormModal.vue'
 import AssetTransferModal from '@/components/assets/AssetTransferModal.vue'
 import AssetStatusModal from '@/components/assets/AssetStatusModal.vue'
 import AssetDetailSection from '@/components/assets/AssetDetailSection.vue'
+import AssetQrIdentification from '@/components/assets/AssetQrIdentification.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -199,6 +200,7 @@ onUnmounted(() => clearTimeout(successTimer))
       </header>
 
       <div class="asset-sections" aria-label="Información del activo">
+        <AssetQrIdentification v-if="asset.public_path" :asset="asset" />
         <AssetDetailSection id="asset-identification" title="Identificación" :summary="identificationSummary" :open="openSection === 'identification'" @toggle="toggleSection('identification')">
           <dl class="detail-list"><div><dt>Código institucional</dt><dd>{{ placeholder(asset.code) }}</dd></div><div><dt>Nombre</dt><dd>{{ placeholder(asset.name) }}</dd></div><div><dt>Categoría</dt><dd>{{ placeholder(asset.category) }}</dd></div><div><dt>Número de serie</dt><dd>{{ placeholder(asset.serial_number) }}</dd></div><div><dt>Estado</dt><dd><AssetStatusBadge :status="asset.status" /></dd></div><div><dt>Fecha de registro</dt><dd>{{ formatDate(asset.created_at) }}</dd></div><div><dt>Última actualización</dt><dd>{{ formatDate(asset.updated_at) }}</dd></div></dl>
           <div class="notes-block"><h3>Observaciones</h3><p>{{ placeholder(asset.notes, 'Sin observaciones registradas.') }}</p></div>
@@ -284,4 +286,5 @@ onUnmounted(() => clearTimeout(successTimer))
     right: 16px;
     top: 76px;
   }
-}</style>
+}@media print{.asset-detail-view>*{display:none!important}.asset-detail-view .asset-sections{display:block!important}.asset-sections>*{display:none!important}.asset-sections :deep(.qr-identification){display:block!important}}
+</style>

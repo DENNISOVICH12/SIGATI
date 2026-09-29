@@ -28,5 +28,16 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(5)->by($email.'|'.$request->ip());
         });
+
+        RateLimiter::for('public-asset-view', fn (Request $request) => [
+            Limit::perMinute(60)->by($request->ip()),
+            Limit::perMinute(30)->by($request->ip().'|'.$request->route('token')),
+        ]);
+
+        RateLimiter::for('public-asset-report', fn (Request $request) => [
+            Limit::perMinute(3)->by($request->ip()),
+            Limit::perHour(10)->by($request->ip()),
+            Limit::perHour(3)->by($request->ip().'|'.$request->route('token')),
+        ]);
     }
 }
