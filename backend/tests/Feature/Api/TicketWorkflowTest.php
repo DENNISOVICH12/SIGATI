@@ -148,15 +148,30 @@ class TicketWorkflowTest extends TestCase
         $ticket = $this->ticket(['status' => 'resolved', 'assigned_to' => $technician->id, 'resolved_at' => now()]);
 
         Sanctum::actingAs($technician);
-        $this->postJson("/api/tickets/{$ticket->id}/close", ['note' => 'Validado.'])->assertForbidden();
+        $this->postJson("/api/tickets/{$ticket->id}/close", ['reason' => 'Validado.'])->assertForbidden();
 
         Sanctum::actingAs($engineer);
-        $this->postJson("/api/tickets/{$ticket->id}/close", ['note' => 'Validado.'])
+        $this->postJson("/api/tickets/{$ticket->id}/close", ['note' => 'Nombre anterior.'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('reason');
+        $this->assertDatabaseHas('tickets', ['id' => $ticket->id, 'status' => 'resolved', 'closed_at' => null]);
+        $this->assertDatabaseMissing('ticket_events', ['ticket_id' => $ticket->id]);
+
+        $this->postJson("/api/tickets/{$ticket->id}/close", ['reason' => 'Validado.'])
             ->assertOk()->assertJsonPath('ticket.status', 'closed');
-        $this->assertDatabaseHas('ticket_events', ['ticket_id' => $ticket->id, 'event_type' => 'closed']);
+        $this->assertDatabaseHas('ticket_events', [
+            'ticket_id' => $ticket->id,
+            'user_id' => $engineer->id,
+            'event_type' => 'closed',
+            'old_status' => 'resolved',
+            'new_status' => 'closed',
+            'old_assigned_to' => $technician->id,
+            'new_assigned_to' => $technician->id,
+            'reason' => 'Validado.',
+        ]);
 
         $invalid = $this->ticket(['status' => 'in_progress', 'assigned_to' => $technician->id]);
-        $this->postJson("/api/tickets/{$invalid->id}/close", ['note' => 'No válido.'])->assertConflict();
+        $this->postJson("/api/tickets/{$invalid->id}/close", ['reason' => 'No válido.'])->assertConflict();
         $this->assertDatabaseMissing('ticket_events', ['ticket_id' => $invalid->id]);
     }
 

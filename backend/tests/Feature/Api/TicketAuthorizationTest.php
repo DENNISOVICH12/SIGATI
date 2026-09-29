@@ -25,11 +25,24 @@ class TicketAuthorizationTest extends TestCase
         $ticket = $this->ticket(['status' => 'resolved', 'assigned_to' => $assigned->id, 'resolved_at' => now()]);
 
         Sanctum::actingAs($this->userWithRole('technician'));
-        $this->postJson("/api/tickets/{$ticket->id}/close", ['note' => 'Cierre validado'])
-            ->assertForbidden();
+        config(['app.debug' => false]);
+        $eventCount = $ticket->events()->count();
+        $this->postJson("/api/tickets/{$ticket->id}/close", ['reason' => 'Cierre validado'])
+            ->assertForbidden()
+            ->assertJsonStructure(['message'])
+            ->assertJsonMissingPath('exception')
+            ->assertJsonMissingPath('file')
+            ->assertJsonMissingPath('line')
+            ->assertJsonMissingPath('trace');
+        $this->assertDatabaseHas('tickets', [
+            'id' => $ticket->id,
+            'status' => 'resolved',
+            'closed_at' => null,
+        ]);
+        $this->assertSame($eventCount, $ticket->events()->count());
 
         Sanctum::actingAs($this->userWithRole('engineer'));
-        $this->postJson("/api/tickets/{$ticket->id}/close", ['note' => 'Cierre validado'])
+        $this->postJson("/api/tickets/{$ticket->id}/close", ['reason' => 'Cierre validado'])
             ->assertOk()
             ->assertJsonPath('ticket.status', 'closed');
     }
