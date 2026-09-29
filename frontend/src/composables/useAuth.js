@@ -7,6 +7,7 @@ import {
   getStoredUser,
   getToken,
 } from '@/services/authService'
+import { onSessionInvalidated } from '@/services/session'
 
 /*
  * =========================================================
@@ -25,6 +26,11 @@ const user = ref(getStoredUser())
 const loading = ref(false)
 
 const initialized = ref(false)
+
+onSessionInvalidated(() => {
+  user.value = null
+  initialized.value = true
+})
 
 /*
  * El estado reactivo del usuario es la fuente de verdad

@@ -4,6 +4,7 @@ import {
 } from 'vue-router'
 
 import { useAuth } from '@/composables/useAuth'
+import { onSessionInvalidated } from '@/services/session'
 
 const routes = [
   {
@@ -87,6 +88,45 @@ const routes = [
           permission: 'assets.view',
         },
       },
+
+      {
+        path: 'tickets',
+        name: 'tickets',
+        component: () =>
+          import(
+            '@/views/tickets/TicketsView.vue'
+          ),
+        meta: {
+          requiresAuth: true,
+          permission: 'tickets.view',
+        },
+      },
+
+      {
+        path: 'tickets/nuevo',
+        name: 'ticket-create',
+        component: () =>
+          import(
+            '@/views/tickets/TicketCreateView.vue'
+          ),
+        meta: {
+          requiresAuth: true,
+          permission: 'tickets.create',
+        },
+      },
+
+      {
+        path: 'tickets/:id',
+        name: 'ticket-detail',
+        component: () =>
+          import(
+            '@/views/tickets/TicketDetailView.vue'
+          ),
+        meta: {
+          requiresAuth: true,
+          permission: 'tickets.view',
+        },
+      },
     ],
   },
 
@@ -117,6 +157,19 @@ const router = createRouter({
   history: createWebHistory(),
 
   routes,
+})
+
+onSessionInvalidated(() => {
+  const currentRoute = router.currentRoute.value
+
+  if (currentRoute.name && currentRoute.name !== 'login') {
+    router.replace({
+      name: 'login',
+      query: {
+        redirect: currentRoute.fullPath,
+      },
+    })
+  }
 })
 
 /*

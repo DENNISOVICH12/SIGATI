@@ -65,8 +65,14 @@ const { can } = useAuth()
           <span class="nav-label">Activos</span>
         </router-link>
 
-        <!-- Tickets (Deshabilitado temporalmente) -->
-        <div class="nav-item disabled" title="Módulo disponible en la siguiente fase">
+        <!-- Mesa de Ayuda (Habilitada con permiso tickets.view) -->
+        <router-link
+          v-if="can('tickets.view')"
+          :to="{ name: 'tickets' }"
+          class="nav-item"
+          active-class="active"
+          @click="emit('close')"
+        >
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
@@ -74,9 +80,8 @@ const { can } = useAuth()
             <line x1="16" y1="17" x2="8" y2="17"></line>
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
-          <span class="nav-label">Tickets</span>
-          <span class="coming-soon-badge">Próx.</span>
-        </div>
+          <span class="nav-label">Mesa de Ayuda</span>
+        </router-link>
       </nav>
 
       <div class="sidebar-footer">
@@ -195,16 +200,6 @@ const { can } = useAuth()
 
 .nav-label {
   flex: 1;
-}
-
-.coming-soon-badge {
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background-color: rgba(255, 255, 255, 0.1);
-  color: #cbd5e1;
-  font-weight: 600;
-  text-transform: uppercase;
 }
 
 .sidebar-footer {

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Domain\Tickets\TicketStatus;
+use App\Domain\Tickets\TicketSla;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -126,7 +127,7 @@ class Ticket extends Model
             return 'breached';
         }
 
-        if ($minutesRemaining <= 15) {
+        if ($minutesRemaining <= TicketSla::RESPONSE_WARNING_MINUTES) {
             return 'warning';
         }
 
@@ -188,7 +189,7 @@ class Ticket extends Model
          * Advertencia cuando queda una hora o menos
          * para incumplir el SLA de resolución.
          */
-        if ($minutesRemaining <= 60) {
+        if ($minutesRemaining <= TicketSla::RESOLUTION_WARNING_MINUTES) {
             return 'warning';
         }
 

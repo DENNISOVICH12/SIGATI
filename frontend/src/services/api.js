@@ -1,7 +1,12 @@
 import axios from 'axios'
+import { invalidateSession } from './session'
+
+const apiBaseUrl =
+  import.meta.env.VITE_API_BASE_URL?.trim() ||
+  'http://127.0.0.1:8000/api'
 
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:8000/api',
+  baseURL: apiBaseUrl,
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -39,9 +44,11 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('sigati_token')
-      localStorage.removeItem('sigati_user')
+    if (
+      error.response?.status === 401 &&
+      localStorage.getItem('sigati_token')
+    ) {
+      invalidateSession()
     }
 
     return Promise.reject(error)
