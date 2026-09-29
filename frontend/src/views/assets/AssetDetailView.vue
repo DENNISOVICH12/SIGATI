@@ -8,6 +8,7 @@ import AssetHistory from '@/components/assets/AssetHistory.vue'
 import AssetFormModal from '@/components/assets/AssetFormModal.vue'
 import AssetTransferModal from '@/components/assets/AssetTransferModal.vue'
 import AssetStatusModal from '@/components/assets/AssetStatusModal.vue'
+import AssetDetailSection from '@/components/assets/AssetDetailSection.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +25,7 @@ const categories = ref([])
 const isModalOpen = ref(false)
 const isTransferModalOpen = ref(false)
 const isStatusModalOpen = ref(false)
+const openSection = ref(null)
 
 const successMessage = ref('')
 let successTimer = null
@@ -31,6 +33,22 @@ let successTimer = null
 const assetId = computed(() => route.params.id)
 
 const placeholder = (value, fallback = 'No registrado') => value === null || value === undefined || value === '' ? fallback : value
+
+const joinSummary = (values, fallback = 'Sin información registrada') => {
+  const available = values.filter((value) => value !== null && value !== undefined && value !== '')
+  return available.length ? available.join(' · ') : fallback
+}
+
+const identificationSummary = computed(() => joinSummary([asset.value?.code, asset.value?.name]))
+const specificationsSummary = computed(() => joinSummary([asset.value?.brand, asset.value?.model], 'Sin fabricante registrado'))
+const locationSummary = computed(() => joinSummary([
+  asset.value?.area?.name || 'Sin área asignada',
+  asset.value?.location?.name || 'Sin ubicación específica',
+]))
+
+const toggleSection = (section) => {
+  openSection.value = openSection.value === section ? null : section
+}
 
 const formatDate = (value) => {
   if (!value) return 'No registrada'
@@ -180,29 +198,19 @@ onUnmounted(() => clearTimeout(successTimer))
 </div>
       </header>
 
-      <div class="detail-grid">
-        <section class="info-card">
-          <h2>Identificación</h2>
-          <dl><div><dt>Código institucional</dt><dd>{{ asset.code }}</dd></div><div><dt>Nombre</dt><dd>{{ asset.name }}</dd></div><div><dt>Categoría</dt><dd>{{ asset.category }}</dd></div><div><dt>Número de serie</dt><dd>{{ placeholder(asset.serial_number) }}</dd></div></dl>
-        </section>
-        <section class="info-card">
-          <h2>Fabricante</h2>
-          <dl><div><dt>Marca</dt><dd>{{ placeholder(asset.brand) }}</dd></div><div><dt>Modelo</dt><dd>{{ placeholder(asset.model) }}</dd></div></dl>
-        </section>
-        <section class="info-card">
-          <h2>Ubicación y asignación</h2>
-          <dl><div><dt>Área</dt><dd>{{ placeholder(asset.area?.name, 'Sin área asignada') }}</dd></div><div><dt>Ubicación</dt><dd>{{ placeholder(asset.location?.name, 'Sin ubicación específica') }}</dd></div><div><dt>Funcionario responsable</dt><dd>{{ placeholder(asset.responsible_name, 'Sin asignar') }}</dd></div></dl>
-        </section>
-        <section class="info-card">
-          <h2>Red y conectividad</h2>
-          <dl><div><dt>Hostname</dt><dd class="technical">{{ placeholder(asset.hostname) }}</dd></div><div><dt>Dirección IP</dt><dd class="technical">{{ placeholder(asset.ip_address) }}</dd></div><div><dt>Dirección MAC</dt><dd class="technical">{{ placeholder(asset.mac_address) }}</dd></div></dl>
-        </section>
-        <section class="info-card wide-card">
-          <h2>Observaciones</h2><p class="notes">{{ placeholder(asset.notes, 'Sin observaciones registradas.') }}</p>
-        </section>
-        <section class="info-card wide-card registry-card">
-          <h2>Información del registro</h2><dl><div><dt>Fecha de registro</dt><dd>{{ formatDate(asset.created_at) }}</dd></div><div><dt>Última actualización</dt><dd>{{ formatDate(asset.updated_at) }}</dd></div></dl>
-        </section>
+      <div class="asset-sections" aria-label="Información del activo">
+        <AssetDetailSection id="asset-identification" title="Identificación" :summary="identificationSummary" :open="openSection === 'identification'" @toggle="toggleSection('identification')">
+          <dl class="detail-list"><div><dt>Código institucional</dt><dd>{{ placeholder(asset.code) }}</dd></div><div><dt>Nombre</dt><dd>{{ placeholder(asset.name) }}</dd></div><div><dt>Categoría</dt><dd>{{ placeholder(asset.category) }}</dd></div><div><dt>Número de serie</dt><dd>{{ placeholder(asset.serial_number) }}</dd></div><div><dt>Estado</dt><dd><AssetStatusBadge :status="asset.status" /></dd></div><div><dt>Fecha de registro</dt><dd>{{ formatDate(asset.created_at) }}</dd></div><div><dt>Última actualización</dt><dd>{{ formatDate(asset.updated_at) }}</dd></div></dl>
+          <div class="notes-block"><h3>Observaciones</h3><p>{{ placeholder(asset.notes, 'Sin observaciones registradas.') }}</p></div>
+        </AssetDetailSection>
+
+        <AssetDetailSection id="asset-specifications" title="Fabricante y especificaciones" :summary="specificationsSummary" :open="openSection === 'specifications'" @toggle="toggleSection('specifications')">
+          <dl class="detail-list"><div><dt>Marca</dt><dd>{{ placeholder(asset.brand) }}</dd></div><div><dt>Modelo</dt><dd>{{ placeholder(asset.model) }}</dd></div><div><dt>Hostname</dt><dd class="technical">{{ placeholder(asset.hostname) }}</dd></div><div><dt>Dirección IP</dt><dd class="technical">{{ placeholder(asset.ip_address) }}</dd></div><div><dt>Dirección MAC</dt><dd class="technical">{{ placeholder(asset.mac_address) }}</dd></div></dl>
+        </AssetDetailSection>
+
+        <AssetDetailSection id="asset-location" title="Ubicación" :summary="locationSummary" :open="openSection === 'location'" @toggle="toggleSection('location')">
+          <dl class="detail-list"><div><dt>Área</dt><dd>{{ placeholder(asset.area?.name, 'Sin área asignada') }}</dd></div><div><dt>Ubicación</dt><dd>{{ placeholder(asset.location?.name, 'Sin ubicación específica') }}</dd></div><div><dt>Funcionario responsable</dt><dd>{{ placeholder(asset.responsible_name, 'Sin responsable asignado') }}</dd></div></dl>
+        </AssetDetailSection>
       </div>
 
       <AssetHistory :history="history" :loading="historyLoading" :error="historyError" @retry="loadHistory(history.current_page || 1)" @page-change="loadHistory" />
@@ -228,7 +236,7 @@ onUnmounted(() => clearTimeout(successTimer))
 <style scoped>
 .asset-detail-view{display:flex;flex-direction:column;gap:22px}.back-link{align-self:flex-start;border:0;background:transparent;color:var(--color-text-muted);font-weight:600;cursor:pointer;padding:2px 0}.back-link:hover{color:var(--color-primary)}
 .detail-header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px}.code-line{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.asset-code{font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--color-primary);background:var(--color-primary-light);border:1px solid var(--color-primary-border);padding:5px 9px;border-radius:7px}.identity h1{font-size:28px;margin:10px 0 6px;color:var(--color-text-main)}.identity p{margin:0;color:var(--color-text-muted);font-size:14px}.btn-primary,.btn-secondary{border-radius:9px;padding:10px 15px;font-weight:700;cursor:pointer}.btn-primary{background:var(--color-primary);color:#fff;border:1px solid var(--color-primary)}.btn-secondary{background:#fff;color:var(--color-text-main);border:1px solid var(--color-border)}
-.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.info-card{background:#fff;border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:22px}.info-card h2{margin:0 0 18px;font-size:15px;color:var(--color-text-main)}.info-card dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:0}.info-card dl>div{min-width:0}.info-card dt{font-size:11px;text-transform:uppercase;letter-spacing:.45px;font-weight:700;color:var(--color-text-subtle);margin-bottom:5px}.info-card dd{margin:0;color:var(--color-text-main);font-size:14px;font-weight:600;overflow-wrap:anywhere}.technical{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px!important}.wide-card{grid-column:1/-1}.notes{white-space:pre-wrap;margin:0;color:var(--color-text-muted);font-size:14px;line-height:1.65}.registry-card dl{grid-template-columns:repeat(2,minmax(0,260px))}
+.asset-sections{display:flex;min-width:0;flex-direction:column;gap:12px}.detail-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 28px;margin:0}.detail-list>div{min-width:0}.detail-list dt,.notes-block h3{margin:0 0 5px;color:var(--color-text-subtle);font-size:11px;font-weight:700;letter-spacing:.45px;text-transform:uppercase}.detail-list dd{margin:0;color:var(--color-text-main);font-size:14px;font-weight:600;overflow-wrap:anywhere}.technical{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px!important}.notes-block{margin-top:20px;padding-top:17px;border-top:1px solid var(--color-border-subtle)}.notes-block p{margin:0;color:var(--color-text-muted);font-size:14px;line-height:1.65;overflow-wrap:anywhere;white-space:pre-wrap}
 .page-state{background:#fff;border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:70px 24px;text-align:center}.state-icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;margin:0 auto 15px;background:#fef2f2;color:#dc2626;font-size:24px;font-weight:800}.page-state h1{margin:0 0 8px;font-size:22px}.page-state p{margin:0 auto 20px;max-width:520px;color:var(--color-text-muted)}.state-actions{display:flex;justify-content:center;gap:10px}.success-toast{position:fixed;top:88px;right:28px;z-index:1000;display:flex;gap:18px;align-items:center;background:#ecfdf5;color:#166534;border:1px solid #bbf7d0;border-radius:10px;padding:12px 15px;box-shadow:0 8px 24px rgba(15,23,42,.12);font-weight:600}.success-toast button{border:0;background:transparent;color:inherit;font-size:20px;cursor:pointer}
 .detail-loading{display:flex;flex-direction:column;gap:14px}.skeleton{background:linear-gradient(90deg,#eef2f7 25%,#e2e8f0 50%,#eef2f7 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:8px}.sk-back{width:130px;height:18px}.sk-title{width:360px;max-width:70%;height:34px}.sk-subtitle{width:250px;height:18px}.skeleton-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:10px}.sk-card{height:190px}@keyframes shimmer{to{background-position:-200% 0}}
 .header-actions {
@@ -239,14 +247,6 @@ onUnmounted(() => clearTimeout(successTimer))
   flex-wrap: wrap;
 } 
 @media (max-width: 850px) {
-  .detail-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .wide-card {
-    grid-column: auto;
-  }
-
   .detail-header {
     flex-direction: column;
   }
@@ -256,24 +256,15 @@ onUnmounted(() => clearTimeout(successTimer))
     justify-content: flex-start;
   }
 
-  .info-card dl,
-  .registry-card dl {
-    grid-template-columns: 1fr 1fr;
-  }
 }
 
 @media (max-width: 560px) {
-  .info-card dl,
-  .registry-card dl {
+  .detail-list {
     grid-template-columns: 1fr;
   }
 
   .identity h1 {
     font-size: 23px;
-  }
-
-  .info-card {
-    padding: 18px;
   }
 
   .header-actions {
