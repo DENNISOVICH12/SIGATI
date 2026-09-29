@@ -1590,11 +1590,11 @@ public function stats(Request $request): JsonResponse
         abort_unless($request->user()->can('tickets.close') && $request->user()->hasRole('engineer'), 403);
 
         $validated = $request->validate([
-            'note' => ['required', 'string', 'max:2000', 'not_regex:/^\s*$/u'],
+            'reason' => ['required', 'string', 'max:2000', 'not_regex:/^\s*$/u'],
         ]);
 
         return $this->workflowResponse(
-            $workflow->close($ticket->id, $request->user(), trim($validated['note'])),
+            $workflow->close($ticket->id, $request->user(), trim($validated['reason'])),
             'Servicio cerrado correctamente.'
         );
     }

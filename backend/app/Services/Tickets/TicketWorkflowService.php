@@ -128,13 +128,13 @@ class TicketWorkflowService
         });
     }
 
-    public function close(int $ticketId, User $actor, string $note): Ticket
+    public function close(int $ticketId, User $actor, string $reason): Ticket
     {
-        return $this->transaction($ticketId, function (Ticket $ticket) use ($actor, $note): void {
+        return $this->transaction($ticketId, function (Ticket $ticket) use ($actor, $reason): void {
             $this->transition($ticket, TicketStatus::Resolved, TicketStatus::Closed);
             $now = now();
             $ticket->update(['status' => TicketStatus::Closed, 'closed_at' => $now]);
-            $this->event($ticket, $actor, 'closed', TicketStatus::Resolved, TicketStatus::Closed, $ticket->assigned_to, $ticket->assigned_to, $note, [
+            $this->event($ticket, $actor, 'closed', TicketStatus::Resolved, TicketStatus::Closed, $ticket->assigned_to, $ticket->assigned_to, $reason, [
                 'closed_at' => $now->toISOString(),
                 'closed_by' => $actor->id,
             ]);
