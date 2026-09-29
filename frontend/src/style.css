@@ -76,3 +76,50 @@ a {
 button, input, select, textarea {
   font-family: inherit;
 }
+
+/* Shared interaction language for controls that reveal content in place. */
+.expandable-card {
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease, background-color 200ms ease;
+}
+
+.expandable-card--open {
+  border-color: var(--color-primary-border) !important;
+}
+
+.expandable-card__trigger {
+  cursor: pointer;
+}
+
+.expandable-card__trigger:focus-visible {
+  outline: 3px solid var(--color-primary-border);
+  outline-offset: 3px;
+}
+
+.expandable-hint {
+  display: block;
+  color: var(--color-text-subtle);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  transition: color 200ms ease;
+}
+
+@media (hover: hover) {
+  .expandable-card:not(.expandable-card--open):hover {
+    transform: translateY(-2px);
+    border-color: var(--color-primary-border);
+    background-color: #fff;
+    box-shadow: 0 7px 18px rgba(15, 23, 42, 0.07);
+  }
+
+  .expandable-card:hover .expandable-hint {
+    color: var(--color-text-muted);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .expandable-card,
+  .expandable-hint {
+    transition-duration: 0.01ms !important;
+  }
+}
