@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Domain\Tickets\TicketSla;
 use App\Http\Controllers\Controller;
 use App\Models\Asset;
 use App\Models\Ticket;
@@ -403,24 +404,28 @@ public function index(Request $request): JsonResponse
              * SLA GENERAL EN TIEMPO
              * ==================================================
              *
-             * Al menos uno de los SLA pendientes dispone
-             * de más de 15 minutos antes de vencer.
+             * Al menos uno de los SLA pendientes permanece
+             * fuera de su ventana de advertencia.
              */
             case 'on_time':
 
-                $onTimeLimit = $now
+                $responseOnTimeLimit = $now
                     ->copy()
-                    ->addMinutes(15);
+                    ->addMinutes(TicketSla::RESPONSE_WARNING_MINUTES);
+                $resolutionOnTimeLimit = $now
+                    ->copy()
+                    ->addMinutes(TicketSla::RESOLUTION_WARNING_MINUTES);
 
                 $query->where(function ($q) use (
-                    $onTimeLimit
+                    $responseOnTimeLimit,
+                    $resolutionOnTimeLimit
                 ) {
 
                     /*
                      * Primera respuesta todavía en tiempo.
                      */
                     $q->where(function ($response) use (
-                        $onTimeLimit
+                        $responseOnTimeLimit
                     ) {
 
                         $response
@@ -429,7 +434,7 @@ public function index(Request $request): JsonResponse
                             ->where(
                                 'response_due_at',
                                 '>',
-                                $onTimeLimit
+                                $responseOnTimeLimit
                             );
                     })
 
@@ -437,7 +442,7 @@ public function index(Request $request): JsonResponse
                      * Resolución todavía en tiempo.
                      */
                     ->orWhere(function ($resolution) use (
-                        $onTimeLimit
+                        $resolutionOnTimeLimit
                     ) {
 
                         $resolution
@@ -446,7 +451,7 @@ public function index(Request $request): JsonResponse
                             ->where(
                                 'resolution_due_at',
                                 '>',
-                                $onTimeLimit
+                                $resolutionOnTimeLimit
                             );
                     });
                 });
@@ -458,18 +463,22 @@ public function index(Request $request): JsonResponse
              * SLA GENERAL EN ADVERTENCIA
              * ==================================================
              *
-             * Al menos uno de los SLA pendientes vence
-             * dentro de los próximos 15 minutos.
+             * Al menos uno de los SLA pendientes está dentro
+             * de su ventana de advertencia.
              */
             case 'warning':
 
-                $warningLimit = $now
+                $responseWarningLimit = $now
                     ->copy()
-                    ->addMinutes(15);
+                    ->addMinutes(TicketSla::RESPONSE_WARNING_MINUTES);
+                $resolutionWarningLimit = $now
+                    ->copy()
+                    ->addMinutes(TicketSla::RESOLUTION_WARNING_MINUTES);
 
                 $query->where(function ($q) use (
                     $now,
-                    $warningLimit
+                    $responseWarningLimit,
+                    $resolutionWarningLimit
                 ) {
 
                     /*
@@ -477,7 +486,7 @@ public function index(Request $request): JsonResponse
                      */
                     $q->where(function ($response) use (
                         $now,
-                        $warningLimit
+                        $responseWarningLimit
                     ) {
 
                         $response
@@ -487,7 +496,7 @@ public function index(Request $request): JsonResponse
                                 'response_due_at',
                                 [
                                     $now,
-                                    $warningLimit,
+                                    $responseWarningLimit,
                                 ]
                             );
                     })
@@ -497,7 +506,7 @@ public function index(Request $request): JsonResponse
                      */
                     ->orWhere(function ($resolution) use (
                         $now,
-                        $warningLimit
+                        $resolutionWarningLimit
                     ) {
 
                         $resolution
@@ -507,7 +516,7 @@ public function index(Request $request): JsonResponse
                                 'resolution_due_at',
                                 [
                                     $now,
-                                    $warningLimit,
+                                    $resolutionWarningLimit,
                                 ]
                             );
                     });
@@ -617,7 +626,7 @@ public function index(Request $request): JsonResponse
 
                 $onTimeLimit = $now
                     ->copy()
-                    ->addMinutes(15);
+                    ->addMinutes(TicketSla::RESPONSE_WARNING_MINUTES);
 
                 $query
                     ->whereNull('first_response_at')
@@ -642,7 +651,7 @@ public function index(Request $request): JsonResponse
 
                 $warningLimit = $now
                     ->copy()
-                    ->addMinutes(15);
+                    ->addMinutes(TicketSla::RESPONSE_WARNING_MINUTES);
 
                 $query
                     ->whereNull('first_response_at')
@@ -753,13 +762,13 @@ public function index(Request $request): JsonResponse
              * ==================================================
              *
              * El ticket todavía no está resuelto
-             * y quedan más de 15 minutos.
+             * y permanece fuera de la ventana de advertencia.
              */
             case 'on_time':
 
                 $onTimeLimit = $now
                     ->copy()
-                    ->addMinutes(15);
+                    ->addMinutes(TicketSla::RESOLUTION_WARNING_MINUTES);
 
                 $query
                     ->whereNull('resolved_at')
@@ -778,13 +787,13 @@ public function index(Request $request): JsonResponse
              * ==================================================
              *
              * El ticket todavía no está resuelto
-             * y faltan entre 0 y 15 minutos.
+             * y está dentro de la ventana de advertencia.
              */
             case 'warning':
 
                 $warningLimit = $now
                     ->copy()
-                    ->addMinutes(15);
+                    ->addMinutes(TicketSla::RESOLUTION_WARNING_MINUTES);
 
                 $query
                     ->whereNull('resolved_at')
@@ -844,17 +853,12 @@ public function stats(Request $request): JsonResponse
 
     $now = now();
 
-    /*
-     * Límite utilizado para determinar cuándo un SLA
-     * activo entra en estado de advertencia.
-     *
-     * Actualmente:
-     * 0 a 15 minutos = warning
-     * más de 15 minutos = on_time
-     */
-    $warningLimit = $now
+    $responseWarningLimit = $now
         ->copy()
-        ->addMinutes(15);
+        ->addMinutes(TicketSla::RESPONSE_WARNING_MINUTES);
+    $resolutionWarningLimit = $now
+        ->copy()
+        ->addMinutes(TicketSla::RESOLUTION_WARNING_MINUTES);
 
     /*
      * ==========================================================
@@ -907,7 +911,7 @@ public function stats(Request $request): JsonResponse
         ->where(
             'response_due_at',
             '>',
-            $warningLimit
+            $responseWarningLimit
         )
         ->count();
 
@@ -921,7 +925,7 @@ public function stats(Request $request): JsonResponse
             'response_due_at',
             [
                 $now,
-                $warningLimit,
+                $responseWarningLimit,
             ]
         )
         ->count();
@@ -991,7 +995,7 @@ public function stats(Request $request): JsonResponse
         ->where(
             'resolution_due_at',
             '>',
-            $warningLimit
+            $resolutionWarningLimit
         )
         ->count();
 
@@ -1005,7 +1009,7 @@ public function stats(Request $request): JsonResponse
             'resolution_due_at',
             [
                 $now,
-                $warningLimit,
+                $resolutionWarningLimit,
             ]
         )
         ->count();
@@ -1145,13 +1149,14 @@ public function stats(Request $request): JsonResponse
     $slaWarning = Ticket::query()
         ->where(function ($query) use (
             $now,
-            $warningLimit
+            $responseWarningLimit,
+            $resolutionWarningLimit
         ) {
 
             $query
                 ->where(function ($response) use (
                     $now,
-                    $warningLimit
+                    $responseWarningLimit
                 ) {
 
                     $response
@@ -1161,13 +1166,13 @@ public function stats(Request $request): JsonResponse
                             'response_due_at',
                             [
                                 $now,
-                                $warningLimit,
+                                $responseWarningLimit,
                             ]
                         );
                 })
                 ->orWhere(function ($resolution) use (
                     $now,
-                    $warningLimit
+                    $resolutionWarningLimit
                 ) {
 
                     $resolution
@@ -1177,7 +1182,7 @@ public function stats(Request $request): JsonResponse
                             'resolution_due_at',
                             [
                                 $now,
-                                $warningLimit,
+                                $resolutionWarningLimit,
                             ]
                         );
                 });
@@ -1186,14 +1191,16 @@ public function stats(Request $request): JsonResponse
 
     /*
      * Tickets que actualmente tienen al menos
-     * un SLA pendiente y todavía disponen de
-     * más de 15 minutos.
+     * un SLA pendiente fuera de su ventana de advertencia.
      */
     $slaOnTime = Ticket::query()
-        ->where(function ($query) use ($warningLimit) {
+        ->where(function ($query) use (
+            $responseWarningLimit,
+            $resolutionWarningLimit
+        ) {
 
             $query
-                ->where(function ($response) use ($warningLimit) {
+                ->where(function ($response) use ($responseWarningLimit) {
 
                     $response
                         ->whereNull('first_response_at')
@@ -1201,10 +1208,10 @@ public function stats(Request $request): JsonResponse
                         ->where(
                             'response_due_at',
                             '>',
-                            $warningLimit
+                            $responseWarningLimit
                         );
                 })
-                ->orWhere(function ($resolution) use ($warningLimit) {
+                ->orWhere(function ($resolution) use ($resolutionWarningLimit) {
 
                     $resolution
                         ->whereNull('resolved_at')
@@ -1212,7 +1219,7 @@ public function stats(Request $request): JsonResponse
                         ->where(
                             'resolution_due_at',
                             '>',
-                            $warningLimit
+                            $resolutionWarningLimit
                         );
                 });
         })
@@ -1298,6 +1305,7 @@ public function stats(Request $request): JsonResponse
                 'required',
                 'string',
                 'max:150',
+                'not_regex:/^\s*$/u',
             ],
 
             'reporter_email' => [
@@ -1316,18 +1324,21 @@ public function stats(Request $request): JsonResponse
                 'required',
                 'string',
                 'max:200',
+                'not_regex:/^\s*$/u',
             ],
 
             'description' => [
                 'required',
                 'string',
                 'max:5000',
+                'not_regex:/^\s*$/u',
             ],
 
             'category' => [
                 'required',
                 'string',
                 'max:80',
+                'not_regex:/^\s*$/u',
             ],
 
             'priority' => [
@@ -1416,13 +1427,17 @@ public function stats(Request $request): JsonResponse
                 'asset_id' => $validated['asset_id'] ?? null,
                 'assigned_to' => null,
 
-                'reporter_name' => $validated['reporter_name'],
-                'reporter_email' => $validated['reporter_email'] ?? null,
-                'reporter_phone' => $validated['reporter_phone'] ?? null,
+                'reporter_name' => trim($validated['reporter_name']),
+                'reporter_email' => isset($validated['reporter_email'])
+                    ? trim($validated['reporter_email'])
+                    : null,
+                'reporter_phone' => isset($validated['reporter_phone'])
+                    ? trim($validated['reporter_phone'])
+                    : null,
 
-                'title' => $validated['title'],
-                'description' => $validated['description'],
-                'category' => $validated['category'],
+                'title' => trim($validated['title']),
+                'description' => trim($validated['description']),
+                'category' => trim($validated['category']),
 
                 'priority' => $validated['priority'] ?? 'medium',
                 'status' => 'new',
