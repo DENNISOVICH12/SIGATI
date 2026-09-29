@@ -8,11 +8,10 @@ use App\Http\Requests\StoreTicketRequest;
 use App\Models\Asset;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Services\Tickets\TicketCreationService;
 use App\Services\Tickets\TicketWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class TicketController extends Controller
@@ -1291,127 +1290,17 @@ public function stats(Request $request): JsonResponse
     /**
      * Crear un nuevo ticket.
      */
-    public function store(StoreTicketRequest $request): JsonResponse
+    public function store(StoreTicketRequest $request, TicketCreationService $tickets): JsonResponse
     {
         abort_unless($request->user()->can('tickets.create'), 403);
 
         $validated = $request->validated();
 
-        $ticket = DB::transaction(function () use ($validated, $request) {
+        if (!empty($validated['asset_id'])) {
+            Asset::query()->whereKey($validated['asset_id'])->firstOrFail();
+        }
 
-            /*
-             * Si el ticket está relacionado con un activo,
-             * comprobamos que el activo siga existiendo.
-             */
-            if (!empty($validated['asset_id'])) {
-                Asset::query()
-                    ->whereKey($validated['asset_id'])
-                    ->firstOrFail();
-            }
-
-            $reportedAt = now();
-
-            /*
-             * SLA inicial.
-             *
-             * Estos tiempos son provisionales para el desarrollo.
-             * Posteriormente serán configurables y deberán ser
-             * validados con el hospital.
-             */
-            $sla = match ($validated['priority'] ?? 'medium') {
-                'critical' => [
-                    'response' => 15,
-                    'resolution' => 120,
-                ],
-
-                'high' => [
-                    'response' => 30,
-                    'resolution' => 240,
-                ],
-
-                'medium' => [
-                    'response' => 60,
-                    'resolution' => 480,
-                ],
-
-                'low' => [
-                    'response' => 120,
-                    'resolution' => 1440,
-                ],
-            };
-
-            /*
-             * Generamos un código no secuencial para evitar
-             * depender del ID de base de datos como código visible.
-             */
-            do {
-                $code = 'TCK-' .
-                    now()->format('Ymd') .
-                    '-' .
-                    strtoupper(Str::random(6));
-            } while (
-                Ticket::query()
-                    ->where('code', $code)
-                    ->exists()
-            );
-
-            $ticket = Ticket::create([
-                'code' => $code,
-
-                'asset_id' => $validated['asset_id'] ?? null,
-                'assigned_to' => null,
-
-                'reporter_name' => $validated['reporter_name'],
-                'reporter_email' => $validated['reporter_email'] ?? null,
-                'reporter_phone' => $validated['reporter_phone'] ?? null,
-
-                'title' => $validated['title'],
-                'description' => $validated['description'],
-                'category' => $validated['category'],
-
-                'priority' => $validated['priority'] ?? 'medium',
-                'status' => 'new',
-
-                'source' => $validated['source'] ?? 'internal',
-
-                'reported_at' => $reportedAt,
-
-                'response_due_at' => $reportedAt
-                    ->copy()
-                    ->addMinutes($sla['response']),
-
-                'resolution_due_at' => $reportedAt
-                    ->copy()
-                    ->addMinutes($sla['resolution']),
-            ]);
-
-            /*
-             * Primer evento del historial.
-             */
-            $ticket->events()->create([
-                'user_id' => $request->user()->id,
-
-                'event_type' => 'created',
-
-                'old_status' => null,
-                'new_status' => 'new',
-
-                'old_assigned_to' => null,
-                'new_assigned_to' => null,
-
-                'description' => 'Ticket creado.',
-
-                'metadata' => [
-                    'source' => $ticket->source,
-                    'priority' => $ticket->priority,
-                    'asset_id' => $ticket->asset_id,
-                    'response_due_at' => $ticket->response_due_at?->toISOString(),
-                    'resolution_due_at' => $ticket->resolution_due_at?->toISOString(),
-                ],
-            ]);
-
-            return $ticket;
-        });
+        $ticket = $tickets->create($validated, $request->user());
 
         $ticket->load([
             'asset:id,code,name,category,area_id,location_id,status',
@@ -1426,6 +1315,7 @@ public function stats(Request $request): JsonResponse
             'ticket' => $ticket,
         ], 201);
     }
+
     /**
      * Permitir que un técnico tome un ticket disponible.
      */

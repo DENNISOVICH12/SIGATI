@@ -8,6 +8,12 @@ import { onSessionInvalidated } from '@/services/session'
 
 const routes = [
   {
+    path: '/a/:token',
+    name: 'public-asset',
+    component: () => import('@/views/assets/PublicAssetView.vue'),
+    meta: { public: true },
+  },
+  {
     path: '/login',
     name: 'login',
 

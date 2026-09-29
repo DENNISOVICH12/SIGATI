@@ -6,10 +6,13 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\UserAccessController;
+use App\Http\Controllers\Api\PublicAssetController;
 use Illuminate\Support\Facades\Route;
 
 // Ruta pública
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
+Route::get('/public/assets/{token}', [PublicAssetController::class, 'show'])->middleware('throttle:public-asset-view');
+Route::post('/public/assets/{token}/reports', [PublicAssetController::class, 'report'])->middleware('throttle:public-asset-report');
 
 // Rutas protegidas
 Route::middleware(['auth:sanctum', 'active'])->group(function () {

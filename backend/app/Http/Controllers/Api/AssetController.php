@@ -129,7 +129,10 @@ class AssetController extends Controller
         ]);
 
         return response()->json([
-            'asset' => $asset,
+            'asset' => [
+                ...$asset->toArray(),
+                'public_path' => '/a/'.$asset->public_token,
+            ],
         ]);
     }
 

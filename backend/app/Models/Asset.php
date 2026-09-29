@@ -4,12 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Asset extends Model
 {
-    
     protected $fillable = [
         'code',
         'name',
@@ -24,17 +23,20 @@ class Asset extends Model
         'ip_address',
         'mac_address',
         'status',
-        'public_token',
         'notes',
     ];
+
+    protected $hidden = ['public_token'];
+
     protected static function booted(): void
-{
-    static::creating(function (Asset $asset) {
-        if (empty($asset->public_token)) {
-            $asset->public_token = (string) Str::uuid();
-        }
-    });
-}
+    {
+        static::creating(function (Asset $asset): void {
+            if (empty($asset->public_token)) {
+                $asset->public_token = (string) Str::uuid();
+            }
+        });
+    }
+
     public function area(): BelongsTo
     {
         return $this->belongsTo(Area::class);
@@ -44,9 +46,10 @@ class Asset extends Model
     {
         return $this->belongsTo(Location::class);
     }
+
     public function history(): HasMany
-{
-    return $this->hasMany(AssetHistory::class)
-        ->orderByDesc('created_at');
+    {
+        return $this->hasMany(AssetHistory::class)
+            ->orderByDesc('created_at');
+    }
 }
-} 
