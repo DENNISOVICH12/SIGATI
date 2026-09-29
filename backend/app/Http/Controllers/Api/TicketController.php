@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Domain\Tickets\TicketSla;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreTicketRequest;
 use App\Models\Asset;
 use App\Models\Ticket;
 use App\Models\User;
@@ -1290,78 +1291,11 @@ public function stats(Request $request): JsonResponse
     /**
      * Crear un nuevo ticket.
      */
-    public function store(Request $request): JsonResponse
+    public function store(StoreTicketRequest $request): JsonResponse
     {
         abort_unless($request->user()->can('tickets.create'), 403);
 
-        $validated = $request->validate([
-            'asset_id' => [
-                'nullable',
-                'integer',
-                'exists:assets,id',
-            ],
-
-            'reporter_name' => [
-                'required',
-                'string',
-                'max:150',
-                'not_regex:/^\s*$/u',
-            ],
-
-            'reporter_email' => [
-                'nullable',
-                'email',
-                'max:150',
-            ],
-
-            'reporter_phone' => [
-                'nullable',
-                'string',
-                'max:30',
-            ],
-
-            'title' => [
-                'required',
-                'string',
-                'max:200',
-                'not_regex:/^\s*$/u',
-            ],
-
-            'description' => [
-                'required',
-                'string',
-                'max:5000',
-                'not_regex:/^\s*$/u',
-            ],
-
-            'category' => [
-                'required',
-                'string',
-                'max:80',
-                'not_regex:/^\s*$/u',
-            ],
-
-            'priority' => [
-                'nullable',
-                Rule::in([
-                    'low',
-                    'medium',
-                    'high',
-                    'critical',
-                ]),
-            ],
-
-            'source' => [
-                'nullable',
-                Rule::in([
-                    'internal',
-                    'qr',
-                    'phone',
-                    'email',
-                    'manual',
-                ]),
-            ],
-        ]);
+        $validated = $request->validated();
 
         $ticket = DB::transaction(function () use ($validated, $request) {
 
@@ -1427,17 +1361,13 @@ public function stats(Request $request): JsonResponse
                 'asset_id' => $validated['asset_id'] ?? null,
                 'assigned_to' => null,
 
-                'reporter_name' => trim($validated['reporter_name']),
-                'reporter_email' => isset($validated['reporter_email'])
-                    ? trim($validated['reporter_email'])
-                    : null,
-                'reporter_phone' => isset($validated['reporter_phone'])
-                    ? trim($validated['reporter_phone'])
-                    : null,
+                'reporter_name' => $validated['reporter_name'],
+                'reporter_email' => $validated['reporter_email'] ?? null,
+                'reporter_phone' => $validated['reporter_phone'] ?? null,
 
-                'title' => trim($validated['title']),
-                'description' => trim($validated['description']),
-                'category' => trim($validated['category']),
+                'title' => $validated['title'],
+                'description' => $validated['description'],
+                'category' => $validated['category'],
 
                 'priority' => $validated['priority'] ?? 'medium',
                 'status' => 'new',

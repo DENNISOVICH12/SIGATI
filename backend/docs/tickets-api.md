@@ -17,6 +17,14 @@ Todos los endpoints requieren autenticación Sanctum y un usuario activo. La aut
 
 La creación de tickets responde `201`. La API conserva los códigos `401` (no autenticado o usuario inactivo), `403` (no autorizado), `404` (recurso inexistente), `409` (conflicto de workflow), `422` (validación) y `500` (fallo interno no controlado).
 
+### Validación de creación
+
+`POST /api/tickets` normaliza con `trim` los textos del formulario y convierte correo y teléfono vacíos en `null`. El título requiere entre 5 y 150 caracteres; la descripción, entre 10 y 5000; el nombre del solicitante, entre 2 y 150 y al menos una letra Unicode; y la categoría, entre 2 y 100. El teléfono admite únicamente dígitos y los caracteres de formato `+`, espacio, `-`, `(` y `)`, con 7 a 15 dígitos reales. El correo es opcional, permite dominios internos como `.local` y tiene un máximo de 254 caracteres.
+
+Las prioridades reconocidas son `low`, `medium`, `high` y `critical`. `asset_id` es opcional, pero, cuando se informa, debe identificar un activo existente.
+
+> **Mejora pendiente:** `category` continúa siendo texto libre para preservar el contrato actual. Debe evolucionar posteriormente hacia un catálogo controlado, sin acoplar este endurecimiento de validaciones a una migración funcional del módulo.
+
 ## Atomicidad y concurrencia
 
 `claim`, `release`, `assign`, `start`, `resolve` y `close` consultan nuevamente el ticket dentro de una transacción y aplican `lockForUpdate()`. La mutación y su `TicketEvent` pertenecen a la misma transacción: si el evento falla, la mutación se revierte. `assign` también bloquea el técnico seleccionado antes de comprobar que continúa activo y conserva su rol.

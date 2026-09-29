@@ -40,27 +40,41 @@ const selectedAssetId = computed(() => {
 
 const clearFieldError = (field) => {
   if (fieldErrors.value[field]) delete fieldErrors.value[field]
+  if (Object.keys(fieldErrors.value).length === 0) generalError.value = ''
+}
+
+const phoneIsValid = (phone) => {
+  if (!/^\+?[0-9 ()-]+$/.test(phone)) return false
+  const digitCount = phone.replace(/\D/g, '').length
+  return digitCount >= 7 && digitCount <= 15
 }
 
 const validate = () => {
   const errors = {}
-  const required = [
-    ['reporter_name', 'El nombre del solicitante es obligatorio.', 150],
-    ['title', 'El título es obligatorio.', 200],
-    ['description', 'La descripción es obligatoria.', 5000],
-    ['category', 'La categoría es obligatoria.', 80],
-  ]
+  const name = form.value.reporter_name.trim()
+  const title = form.value.title.trim()
+  const description = form.value.description.trim()
+  const category = form.value.category.trim()
 
-  required.forEach(([field, message, max]) => {
-    const value = form.value[field]?.trim() ?? ''
-    if (!value) errors[field] = [message]
-    else if (value.length > max) errors[field] = [`Este campo no puede superar los ${max} caracteres.`]
-  })
+  if (!name) errors.reporter_name = ['El nombre del solicitante es obligatorio.']
+  else if (name.length < 2 || !/\p{L}/u.test(name)) errors.reporter_name = ['El nombre del solicitante no es válido.']
+  else if (name.length > 150) errors.reporter_name = ['El nombre del solicitante no puede superar los 150 caracteres.']
+  if (!title) errors.title = ['El título es obligatorio.']
+  else if (title.length < 5) errors.title = ['El título debe tener al menos 5 caracteres.']
+  else if (title.length > 150) errors.title = ['El título no puede superar los 150 caracteres.']
+  if (!description) errors.description = ['La descripción es obligatoria.']
+  else if (description.length < 10) errors.description = ['La descripción debe tener al menos 10 caracteres.']
+  else if (description.length > 5000) errors.description = ['La descripción no puede superar los 5000 caracteres.']
+  if (!category) errors.category = ['La categoría es obligatoria.']
+  else if (category.length < 2) errors.category = ['La categoría debe tener al menos 2 caracteres.']
+  else if (category.length > 100) errors.category = ['La categoría no puede superar los 100 caracteres.']
 
   const email = form.value.reporter_email.trim()
-  if (email.length > 150) errors.reporter_email = ['El correo no puede superar los 150 caracteres.']
-  else if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.reporter_email = ['Ingresa un correo electrónico válido.']
-  if (form.value.reporter_phone.trim().length > 30) errors.reporter_phone = ['El teléfono no puede superar los 30 caracteres.']
+  if (email.length > 254) errors.reporter_email = ['El correo no puede superar los 254 caracteres.']
+  else if (email && !/^[^\s@]+@[^\s@]+$/.test(email)) errors.reporter_email = ['Ingresa un correo electrónico válido.']
+  const phone = form.value.reporter_phone.trim()
+  if (phone.length > 30) errors.reporter_phone = ['El teléfono no puede superar los 30 caracteres.']
+  else if (phone && !phoneIsValid(phone)) errors.reporter_phone = ['Ingresa un número de teléfono válido.']
   if (!priorities.some(({ value }) => value === form.value.priority)) errors.priority = ['Selecciona una prioridad válida.']
   if (form.value.asset_id !== null && selectedAssetId.value === null) errors.asset_id = ['Selecciona un activo válido o la opción sin activo.']
 
@@ -139,8 +153,14 @@ const handleSubmit = async () => {
   } catch (error) {
     const status = error.response?.status
     if (status === 422) {
-      fieldErrors.value = error.response?.data?.errors ?? {}
-      generalError.value = error.response?.data?.message || 'Revisa los campos indicados.'
+      const backendErrors = error.response?.data?.errors ?? {}
+      fieldErrors.value = Object.fromEntries(
+        Object.entries(backendErrors).map(([field, messages]) => [
+          field,
+          [Array.isArray(messages) && typeof messages[0] === 'string' ? messages[0] : 'Revisa este campo.'],
+        ]),
+      )
+      generalError.value = 'Revisa los campos indicados.'
     } else if (status === 403) {
       forbidden.value = true
       generalError.value = 'No tienes permiso para crear tickets.'
@@ -187,12 +207,12 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
         <div class="fields-grid">
           <div class="field field--wide">
             <label for="title">Título <b>*</b></label>
-            <input id="title" v-model="form.title" maxlength="200" autocomplete="off" :aria-invalid="Boolean(fieldErrors.title)" :aria-describedby="fieldErrors.title ? 'title-error' : undefined" @input="clearFieldError('title')">
+            <input id="title" v-model="form.title" maxlength="150" autocomplete="off" :aria-invalid="Boolean(fieldErrors.title)" :aria-describedby="fieldErrors.title ? 'title-error' : undefined" @input="clearFieldError('title')">
             <p v-if="fieldErrors.title" id="title-error" class="field-error">{{ fieldErrors.title[0] }}</p>
           </div>
           <div class="field">
             <label for="category">Categoría <b>*</b></label>
-            <input id="category" v-model="form.category" maxlength="80" autocomplete="off" placeholder="Ej. Redes, impresoras" :aria-invalid="Boolean(fieldErrors.category)" @input="clearFieldError('category')">
+            <input id="category" v-model="form.category" maxlength="100" autocomplete="off" placeholder="Ej. Redes, impresoras" :aria-invalid="Boolean(fieldErrors.category)" @input="clearFieldError('category')">
             <p v-if="fieldErrors.category" class="field-error">{{ fieldErrors.category[0] }}</p>
           </div>
           <div class="field">
@@ -222,12 +242,12 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
           </div>
           <div class="field">
             <label for="reporter_email">Correo electrónico <em>Opcional</em></label>
-            <input id="reporter_email" v-model="form.reporter_email" type="email" maxlength="150" autocomplete="email" :aria-invalid="Boolean(fieldErrors.reporter_email)" @input="clearFieldError('reporter_email')">
+            <input id="reporter_email" v-model="form.reporter_email" type="email" maxlength="254" autocomplete="email" :aria-invalid="Boolean(fieldErrors.reporter_email)" @input="clearFieldError('reporter_email')">
             <p v-if="fieldErrors.reporter_email" class="field-error">{{ fieldErrors.reporter_email[0] }}</p>
           </div>
           <div class="field">
             <label for="reporter_phone">Teléfono <em>Opcional</em></label>
-            <input id="reporter_phone" v-model="form.reporter_phone" type="tel" maxlength="30" autocomplete="tel" :aria-invalid="Boolean(fieldErrors.reporter_phone)" @input="clearFieldError('reporter_phone')">
+            <input id="reporter_phone" v-model="form.reporter_phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel" :aria-invalid="Boolean(fieldErrors.reporter_phone)" @input="clearFieldError('reporter_phone')">
             <p v-if="fieldErrors.reporter_phone" class="field-error">{{ fieldErrors.reporter_phone[0] }}</p>
           </div>
         </div>
@@ -257,7 +277,7 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
               <strong>{{ asset.code }} · {{ asset.name }}</strong><span>{{ asset.category || 'Sin categoría' }} · {{ assetArea(asset) }}</span>
             </button>
           </div>
-          <p v-else class="asset-message">No se encontraron activos con ese criterio.</p>
+          <p v-else class="asset-message">No se encontraron activos con este criterio.</p>
           <nav v-if="!assetsLoading && !assetError && assetLastPage > 1" class="asset-pagination" aria-label="Páginas de activos">
             <button type="button" :disabled="assetPage <= 1" @click="loadAssets(assetPage - 1)">Anterior</button>
             <span>Página {{ assetPage }} de {{ assetLastPage }}</span>
