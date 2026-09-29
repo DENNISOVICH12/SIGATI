@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\UserAccessController;
@@ -20,6 +21,8 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
      */
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    Route::get('/dashboard', DashboardController::class);
 
     Route::get('/users/technicians', [UserAccessController::class, 'technicians']);
     Route::patch('/users/{user}/active', [UserAccessController::class, 'updateActive']);

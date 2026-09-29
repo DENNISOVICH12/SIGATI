@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import {
   getAssets,
@@ -11,6 +12,7 @@ import AssetTable from '@/components/assets/AssetTable.vue'
 import AssetFormModal from '@/components/assets/AssetFormModal.vue'
 
 const { can } = useAuth()
+const route = useRoute()
 
 // Estado de datos
 const assets = ref([])
@@ -281,6 +283,10 @@ const handleAssetSaved = async ({ asset, category, mode }) => {
 onMounted(() => {
   loadFilterCatalogs()
   fetchAssets()
+
+  if (route.query.action === 'create' && can('assets.create')) {
+    openCreateModal()
+  }
 })
 
 onUnmounted(() => {

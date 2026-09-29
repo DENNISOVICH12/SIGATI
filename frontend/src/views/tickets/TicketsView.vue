@@ -14,10 +14,10 @@ const allowed={status:['new','assigned','in_progress','resolved','closed'],prior
 let debounceTimer, requestId=0
 const value=(key)=>typeof route.query[key]==='string'?route.query[key]:''
 const valid=(key)=>allowed[key].includes(value(key))?value(key):''
-const filters=computed(()=>({search:value('search').slice(0,150),status:valid('status'),priority:valid('priority'),assignment:value('unassigned')==='1'?'unassigned':'',sla:valid('sla')}))
+const filters=computed(()=>({search:value('search').slice(0,150),status:valid('status'),priority:valid('priority'),assignment:value('unassigned')==='1'?'unassigned':'',sla:valid('sla'),assigned_to:/^\d+$/.test(value('assigned_to'))?value('assigned_to'):''}))
 const page=computed(()=>{const number=Number.parseInt(value('page'),10);return Number.isInteger(number)&&number>0?number:1})
 const hasActiveFilters=computed(()=>Object.values(filters.value).some(Boolean))
-const params=computed(()=>({search:filters.value.search,status:filters.value.status,priority:filters.value.priority,unassigned:filters.value.assignment==='unassigned'?1:'',sla:filters.value.sla,page:page.value}))
+const params=computed(()=>({search:filters.value.search,status:filters.value.status,priority:filters.value.priority,unassigned:filters.value.assignment==='unassigned'?1:'',sla:filters.value.sla,assigned_to:filters.value.assigned_to,page:page.value}))
 const cleanQuery=(changes={}, resetPage=true)=>{const next={...route.query,...changes};if(resetPage) delete next.page;Object.keys(next).forEach(k=>{if(next[k]===''||next[k]==null||next[k]===false||(k==='page'&&String(next[k])==='1'))delete next[k]});return next}
 const updateFilter=(key,val)=>router.push({query:cleanQuery({[key]:val})})
 const updateSearch=val=>{searchInput.value=val;clearTimeout(debounceTimer);debounceTimer=setTimeout(()=>updateFilter('search',val.trim()),350)}

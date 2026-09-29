@@ -1,5 +1,17 @@
 # Mesa de Ayuda: contrato y operación del backend
 
+## Dashboard operativo
+
+`GET /api/dashboard` entrega en una sola solicitud el resumen agregado utilizado por el Dashboard. Requiere Sanctum, usuario activo y al menos uno de los permisos `tickets.view` o `assets.view`. No devuelve colecciones completas para realizar conteos en el navegador.
+
+- Para `engineer`, `scope` es `global`: los conteos de tickets y la actividad son institucionales.
+- Para `technician`, `scope` es `assigned`: los conteos, SLA y eventos de tickets se limitan a los servicios asignados al usuario autenticado. `tickets.unassigned` permanece global porque representa la cola de tickets `new` que el workflow permite reclamar.
+- `assets` contiene total, distribución entre los estados reales `operational`, `pending_review`, `faulty` y `maintenance`, y el agregado `problematic`. Se omite como `null` si el usuario no tiene `assets.view`.
+- `tickets` contiene distribución entre `new`, `assigned`, `in_progress`, `resolved` y `closed`; `open` cuenta exclusivamente `new`, `assigned` e `in_progress`; `sla_breached` cuenta tickets abiertos con un SLA incumplido; y `resolved_pending_closure` respeta el alcance del rol.
+- `recent_activity` combina como máximo diez movimientos persistidos de tickets y activos para el ingeniero. Para el técnico incluye únicamente eventos de sus tickets actualmente asignados. La respuesta expone solo datos de presentación y no incluye metadata interna completa.
+
+La autorización del Dashboard no sustituye la de los endpoints de destino: crear, reclamar, asignar, resolver o cerrar continúa validándose en el servidor con los permisos y reglas existentes.
+
 ## Transiciones semánticas
 
 Todos los endpoints requieren autenticación Sanctum y un usuario activo. La autorización se evalúa en el servidor mediante permisos y roles.
