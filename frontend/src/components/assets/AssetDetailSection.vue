@@ -20,7 +20,7 @@ const emit = defineEmits(['toggle'])
     >
       <span class="heading-copy">
         <span class="section-title">{{ title }}</span>
-        <span v-if="!open" class="section-summary">{{ summary }}</span>
+        <span v-if="!open" class="section-summary"><slot name="summary">{{ summary }}</slot></span>
       </span>
       <span class="chevron" aria-hidden="true">⌄</span>
     </button>
