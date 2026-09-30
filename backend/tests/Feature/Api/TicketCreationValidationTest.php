@@ -81,8 +81,8 @@ class TicketCreationValidationTest extends TestCase
             $this->postJson('/api/tickets', $payload)
                 ->assertUnprocessable()
                 ->assertJsonValidationErrors($field);
-            $this->assertDatabaseCount('tickets', 0, "A ticket was created for {$case}.");
-            $this->assertDatabaseCount('ticket_events', 0, "An event was created for {$case}.");
+            $this->assertDatabaseCount('tickets', 0);
+            $this->assertDatabaseCount('ticket_events', 0);
         }
     }
 
