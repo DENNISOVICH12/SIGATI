@@ -1,9 +1,8 @@
 import axios from 'axios'
 import { invalidateSession } from './session'
+import { resolveApiBaseUrl } from '@/utils/apiUrl'
 
-const apiBaseUrl =
-  import.meta.env.VITE_API_BASE_URL?.trim() ||
-  'http://127.0.0.1:8000/api'
+const apiBaseUrl = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL)
 
 const api = axios.create({
   baseURL: apiBaseUrl,
