@@ -7,6 +7,7 @@ use App\Models\TicketEvent;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -216,6 +217,36 @@ class TicketWorkflowTest extends TestCase
             'assigned_to' => null,
         ]);
         $this->assertDatabaseMissing('ticket_events', ['ticket_id' => $ticket->id]);
+    }
+
+    public function test_resolution_primitive_composes_with_an_outer_transaction_and_rolls_back(): void
+    {
+        $technician = $this->user('technician');
+        $ticket = $this->ticket(['status' => 'in_progress', 'assigned_to' => $technician->id]);
+        $workflow = app(\App\Services\Tickets\TicketWorkflowService::class);
+
+        try {
+            DB::transaction(function () use ($workflow, $ticket, $technician): void {
+                $resolved = $workflow->resolveInCurrentTransaction($ticket->id, $technician, $this->resolution());
+                $this->assertSame('resolved', $resolved->status->value);
+                throw new \RuntimeException('Forzar rollback exterior.');
+            });
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Forzar rollback exterior.', $exception->getMessage());
+        }
+
+        $this->assertDatabaseHas('tickets', ['id' => $ticket->id, 'status' => 'in_progress', 'resolved_at' => null]);
+        $this->assertDatabaseMissing('ticket_events', ['ticket_id' => $ticket->id, 'event_type' => 'resolved']);
+    }
+
+    public function test_resolution_primitive_requires_an_existing_transaction(): void
+    {
+        $technician = $this->user('technician');
+        $ticket = $this->ticket(['status' => 'in_progress', 'assigned_to' => $technician->id]);
+
+        $this->expectException(\LogicException::class);
+        app(\App\Services\Tickets\TicketWorkflowService::class)
+            ->resolveInCurrentTransaction($ticket->id, $technician, $this->resolution());
     }
 
     private function user(string $role, array $attributes = []): User

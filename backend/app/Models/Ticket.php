@@ -98,6 +98,11 @@ class Ticket extends Model
             ->orderBy('id');
     }
 
+    public function maintenances(): HasMany
+    {
+        return $this->hasMany(Maintenance::class);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | SLA - Primera respuesta

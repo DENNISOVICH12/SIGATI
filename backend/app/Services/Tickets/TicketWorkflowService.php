@@ -112,20 +112,27 @@ class TicketWorkflowService
 
     public function resolve(int $ticketId, User $actor, array $resolution): Ticket
     {
-        return $this->transaction($ticketId, function (Ticket $ticket) use ($actor, $resolution): void {
-            $this->transition($ticket, TicketStatus::InProgress, TicketStatus::Resolved);
-            $this->ensureAssignedTo($ticket, $actor);
-            $now = now();
-            $ticket->update([
-                'status' => TicketStatus::Resolved,
-                'resolved_at' => $now,
-                'resolution' => $resolution,
-            ]);
-            $this->event($ticket, $actor, 'resolved', TicketStatus::InProgress, TicketStatus::Resolved, $actor->id, $actor->id, null, [
-                ...$resolution,
-                'resolved_at' => $now->toISOString(),
-            ]);
+        return DB::transaction(function () use ($ticketId, $actor, $resolution): Ticket {
+            return $this->resolveInCurrentTransaction($ticketId, $actor, $resolution);
         });
+    }
+
+    /**
+     * Resolve a ticket as part of a transaction already owned by an orchestrator.
+     *
+     * This method acquires the ticket lock itself and always applies the same
+     * state-machine primitive used by the public standalone flow.
+     */
+    public function resolveInCurrentTransaction(int $ticketId, User $actor, array $resolution): Ticket
+    {
+        if (DB::transactionLevel() < 1) {
+            throw new \LogicException('La resolución compuesta requiere una transacción activa.');
+        }
+
+        $ticket = Ticket::query()->lockForUpdate()->findOrFail($ticketId);
+        $this->applyResolution($ticket, $actor, $resolution);
+
+        return $ticket->refresh();
     }
 
     public function close(int $ticketId, User $actor, string $reason): Ticket
@@ -163,6 +170,22 @@ class TicketWorkflowService
         if ((int) $ticket->assigned_to !== (int) $actor->id) {
             throw new TicketWorkflowException('Solo el técnico asignado puede realizar esta operación.', 403);
         }
+    }
+
+    private function applyResolution(Ticket $ticket, User $actor, array $resolution): void
+    {
+        $this->transition($ticket, TicketStatus::InProgress, TicketStatus::Resolved);
+        $this->ensureAssignedTo($ticket, $actor);
+        $now = now();
+        $ticket->update([
+            'status' => TicketStatus::Resolved,
+            'resolved_at' => $now,
+            'resolution' => $resolution,
+        ]);
+        $this->event($ticket, $actor, 'resolved', TicketStatus::InProgress, TicketStatus::Resolved, $actor->id, $actor->id, null, [
+            ...$resolution,
+            'resolved_at' => $now->toISOString(),
+        ]);
     }
 
     private function event(Ticket $ticket, User $actor, string $type, TicketStatus $oldStatus, TicketStatus $newStatus, ?int $oldAssignedTo, ?int $newAssignedTo, ?string $reason, array $metadata): void
