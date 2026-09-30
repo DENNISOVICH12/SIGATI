@@ -112,23 +112,16 @@ class TicketWorkflowService
 
     public function resolve(int $ticketId, User $actor, array $resolution): Ticket
     {
-        return DB::transaction(function () use ($ticketId, $actor, $resolution): Ticket {
+        return (new Ticket)->getConnection()->transaction(function () use ($ticketId, $actor, $resolution): Ticket {
             return $this->resolveInCurrentTransaction($ticketId, $actor, $resolution);
         });
     }
 
     /**
-     * Resolve a ticket as part of a transaction already owned by an orchestrator.
-     *
-     * This method acquires the ticket lock itself and always applies the same
-     * state-machine primitive used by the public standalone flow.
+     * Execute the resolution after resolve() has established its transaction.
      */
-    public function resolveInCurrentTransaction(int $ticketId, User $actor, array $resolution): Ticket
+    private function resolveInCurrentTransaction(int $ticketId, User $actor, array $resolution): Ticket
     {
-        if (DB::transactionLevel() < 1) {
-            throw new \LogicException('La resolución compuesta requiere una transacción activa.');
-        }
-
         $ticket = Ticket::query()->lockForUpdate()->findOrFail($ticketId);
         $this->applyResolution($ticket, $actor, $resolution);
 
