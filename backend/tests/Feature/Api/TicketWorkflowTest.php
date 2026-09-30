@@ -219,7 +219,7 @@ class TicketWorkflowTest extends TestCase
         $this->assertDatabaseMissing('ticket_events', ['ticket_id' => $ticket->id]);
     }
 
-    public function test_resolution_primitive_composes_with_an_outer_transaction_and_rolls_back(): void
+    public function test_resolution_composes_with_an_outer_transaction_and_rolls_back(): void
     {
         $technician = $this->user('technician');
         $ticket = $this->ticket(['status' => 'in_progress', 'assigned_to' => $technician->id]);
@@ -227,7 +227,7 @@ class TicketWorkflowTest extends TestCase
 
         try {
             DB::transaction(function () use ($workflow, $ticket, $technician): void {
-                $resolved = $workflow->resolveInCurrentTransaction($ticket->id, $technician, $this->resolution());
+                $resolved = $workflow->resolve($ticket->id, $technician, $this->resolution());
                 $this->assertSame('resolved', $resolved->status->value);
                 throw new \RuntimeException('Forzar rollback exterior.');
             });
@@ -239,14 +239,14 @@ class TicketWorkflowTest extends TestCase
         $this->assertDatabaseMissing('ticket_events', ['ticket_id' => $ticket->id, 'event_type' => 'resolved']);
     }
 
-    public function test_resolution_primitive_requires_an_existing_transaction(): void
+    public function test_resolution_transaction_primitive_is_not_a_public_api(): void
     {
-        $technician = $this->user('technician');
-        $ticket = $this->ticket(['status' => 'in_progress', 'assigned_to' => $technician->id]);
+        $primitive = new \ReflectionMethod(
+            \App\Services\Tickets\TicketWorkflowService::class,
+            'resolveInCurrentTransaction'
+        );
 
-        $this->expectException(\LogicException::class);
-        app(\App\Services\Tickets\TicketWorkflowService::class)
-            ->resolveInCurrentTransaction($ticket->id, $technician, $this->resolution());
+        $this->assertTrue($primitive->isPrivate());
     }
 
     private function user(string $role, array $attributes = []): User
