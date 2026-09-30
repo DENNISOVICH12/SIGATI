@@ -4,6 +4,7 @@ namespace Tests\Feature\Api;
 
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -51,5 +52,33 @@ class PermissionTest extends TestCase
 
         $this->assertTrue($engineer->hasPermissionTo('assets.decommission'));
         $this->assertFalse($technician->hasPermissionTo('assets.decommission'));
+    }
+
+    public function test_reseeding_removes_obsolete_maintenance_update_grants(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+
+        $engineer = Role::findByName('engineer');
+        $technician = Role::findByName('technician');
+
+        $engineer->givePermissionTo('maintenance.update');
+        $technician->givePermissionTo('maintenance.update');
+
+        $this->assertTrue($engineer->hasPermissionTo('maintenance.update'));
+        $this->assertTrue($technician->hasPermissionTo('maintenance.update'));
+
+        $this->seed(RolePermissionSeeder::class);
+
+        $engineer = Role::findByName('engineer');
+        $technician = Role::findByName('technician');
+
+        $this->assertTrue(Permission::findByName('maintenance.update')->exists);
+
+        foreach ([$engineer, $technician] as $role) {
+            $this->assertTrue($role->hasPermissionTo('maintenance.view'));
+            $this->assertTrue($role->hasPermissionTo('maintenance.create'));
+            $this->assertFalse($role->hasPermissionTo('maintenance.update'));
+            $this->assertNotContains('maintenance.update', $role->permissions()->pluck('name')->all());
+        }
     }
 }

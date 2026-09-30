@@ -67,6 +67,8 @@ class RolePermissionSeeder extends Seeder
         | Ingeniero
         |--------------------------------------------------------------------------
         | El ingeniero tiene control administrativo completo.
+        | La sincronización es autoritativa: también retira concesiones
+        | persistidas que ya no formen parte de esta matriz.
         */
 
         $engineer->syncPermissions(array_values(array_diff(
@@ -81,6 +83,7 @@ class RolePermissionSeeder extends Seeder
         | Puede realizar las operaciones técnicas del día a día,
         | pero no administrar usuarios, aprobar bajas ni modificar
         | la configuración general del sistema.
+        | La sincronización mantiene instalaciones existentes alineadas.
         */
 
         $technician->syncPermissions(self::TECHNICIAN_PERMISSIONS);
