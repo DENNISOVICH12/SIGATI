@@ -24,7 +24,7 @@ class RolePermissionSeeder extends Seeder
     public const TECHNICIAN_PERMISSIONS = [
         'assets.view', 'assets.create', 'assets.update', 'assets.transfer', 'assets.change_status',
         'tickets.view', 'tickets.create', 'tickets.claim', 'tickets.update',
-        'maintenance.view', 'maintenance.create', 'maintenance.update',
+        'maintenance.view', 'maintenance.create',
         'disposals.view', 'disposals.request', 'licenses.view', 'reports.view',
     ];
 
@@ -71,7 +71,7 @@ class RolePermissionSeeder extends Seeder
 
         $engineer->syncPermissions(array_values(array_diff(
             self::PERMISSIONS,
-            ['tickets.claim']
+            ['tickets.claim', 'maintenance.update']
         )));
 
         /*

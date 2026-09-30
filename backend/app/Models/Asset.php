@@ -52,4 +52,9 @@ class Asset extends Model
         return $this->hasMany(AssetHistory::class)
             ->orderByDesc('created_at');
     }
+
+    public function maintenances(): HasMany
+    {
+        return $this->hasMany(Maintenance::class);
+    }
 }
